@@ -1,0 +1,42 @@
+[tool.poetry]
+name = "midas_dev"
+version = "0.2.0"
+description = ""
+authors = ["Anton V <anton.vasilyev@midas.investments>"]
+
+[tool.poetry.scripts]
+midisort = "midas_dev.main:run_isort"
+midblack = "midas_dev.main:run_black"
+midfmt = "midas_dev.main:run_fmt"
+midlint = "midas_dev.main:run_lint"
+midmypy = "midas_dev.main:run_mypy"
+midpytest = "midas_dev.main:run_pytest"
+midtest = "midas_dev.main:run_test"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+pytest = "^7.1.2"
+pytest-env = "^0.6.2"
+asynctest = "^0.13.0"
+Flake8-pyproject = "^0.9.0"
+black = "^22.6.0"
+flake8-pytest-style = "^1.6.0"
+flake8-mock = "^0.3"
+flake8-debugger = "^4.1.2"
+flake8-broken-line = "^0.5.0"
+flake8-use-fstring = "^1.4"
+flake8-print = "^5.0.0"
+isort = "^5.10.1"
+mypy = "^0.971"
+pytest-asyncio = "^0.19.0"
+pytest-blockage = "^0.2.4"
+flake8 = "^4.0.1"
+click = "^8.1.3"
+poetry = "^1.1.15"
+
+[tool.poetry.dev-dependencies]
+types-toml = "^0.10.8"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
