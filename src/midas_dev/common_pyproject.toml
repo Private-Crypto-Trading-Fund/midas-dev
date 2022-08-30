@@ -5,15 +5,18 @@ include_trailing_comma = true
 use_parentheses = true
 multi_line_output = 3
 
+[tool.black]
+line-length = 120
+target-version = ["py310"]
+
 [tool.flake8]
 exclude = ["build", ".git", ".tox", ".env", "build", "dist", "*.egg-info", ".git", ".tox"]
-extend-ignore = ["E203"]
 max-line-length = 120
 show-source = true
 statistics = false
 enable-extensions = ["G", "FS003"]
 per-file-ignores = [
-    "__init__.py:F401,F403",  # “imported but unused”, “'import *' used”
+  "__init__.py:F401,F403",  # “imported but unused”, “'import *' used”
 ]
 
 [tool.pytest.ini_options]

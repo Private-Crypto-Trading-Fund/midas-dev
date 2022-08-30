@@ -1,5 +1,5 @@
-from midas_dev import __version__
+from midas_dev import main
 
 
-def test_version():
-    assert __version__ == "0.1.0"
+def test_stuff():
+    assert main.Flake8.config_ext == "cfg"
