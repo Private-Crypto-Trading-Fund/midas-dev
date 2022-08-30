@@ -36,6 +36,9 @@ addopts = [
   "--cov-report=term-missing:skip-covered",
   "--cov-report=html",
 ]
+env = [
+  "RUN_ENV=tests",
+]
 
 
 [tool.mypy]
