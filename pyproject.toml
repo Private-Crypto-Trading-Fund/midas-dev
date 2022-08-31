@@ -1,17 +1,18 @@
 [tool.poetry]
 name = "midas_dev"
-version = "0.4.0"
+version = "0.5.0"
 description = ""
 authors = ["Anton V <anton.vasilyev@midas.investments>"]
 
 [tool.poetry.scripts]
-midisort = "midas_dev.main:run_isort"
-midblack = "midas_dev.main:run_black"
-midfmt = "midas_dev.main:run_fmt"
-midlint = "midas_dev.main:run_lint"
-midmypy = "midas_dev.main:run_mypy"
-midpytest = "midas_dev.main:run_pytest"
-midtest = "midas_dev.main:run_test"
+midisort = "midas_dev.main:ISort.run_cli"
+midblack = "midas_dev.main:Black.run_cli"
+midfmt = "midas_dev.main:Format.run_cli"
+midflake8 = "midas_dev.main:Flake8.run_cli"
+midmypy = "midas_dev.main:Mypy.run_cli"
+midpytest = "midas_dev.main:Pytest.run_cli"
+midtest = "midas_dev.main:Fulltest.run_cli"
+mid = "midas_dev.main:Fulltest.run_cli"
 
 [tool.poetry.dependencies]
 asynctest = "^0.13.0"
