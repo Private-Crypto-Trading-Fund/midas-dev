@@ -169,4 +169,4 @@ class Format(CLIToolWrapper):
 
 
 class Fulltest(CLIToolWrapper):
-    wrapped: tuple[type[CLIToolBase], ...] = (ISort, Black, Mypy, Pytest)
+    wrapped: tuple[type[CLIToolBase], ...] = (ISort, Black, Flake8, Mypy, Pytest)
