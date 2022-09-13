@@ -37,6 +37,7 @@ pytest-deadfixtures = "^2.2.1"
 pytest-env = "^0.6.2"
 pytest-timeout = "^2.1.0"
 python = "^3.10"
+autoflake = "^1.5.3"
 
 [tool.poetry.dev-dependencies]
 types-toml = "^0.10.8"

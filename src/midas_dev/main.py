@@ -2,14 +2,13 @@ from __future__ import annotations
 
 import configparser
 import contextlib
-import functools
 import io
 import shlex
 import subprocess
 import sys
-from collections.abc import Callable, Generator, Mapping, Sequence
+from collections.abc import Generator, Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import click
 import toml
@@ -36,6 +35,24 @@ def deep_update(target: dict[Any, Any], updates: Mapping[Any, Any]) -> dict[Any,
     return target
 
 
+TVal = TypeVar("TVal")
+
+
+def pair_window(iterable: Iterable[TVal]) -> Iterable[tuple[TVal, TVal]]:
+    """
+    >>> list(pair_window([11, 22, 33, 44]))
+    [(11, 22), (22, 33), (33, 44)]
+    """
+    iterable = iter(iterable)
+    try:
+        prev_value = next(iterable)
+    except StopIteration:
+        return
+    for item in iterable:
+        yield prev_value, item
+        prev_value = item
+
+
 def dumps_configparser(data: dict[Any, Any]) -> str:
     """Write a `configparser` ("ini") format file"""
     config_obj = configparser.ConfigParser()
@@ -50,6 +67,10 @@ def dumps_configparser(data: dict[Any, Any]) -> str:
     return fobj.getvalue()
 
 
+def read_local_config(local_path: str | Path = "pyproject.toml") -> dict[str, Any]:
+    return toml.loads(Path(local_path).read_text())
+
+
 class CLIToolBase:
     def run(self) -> None:
         raise NotImplementedError
@@ -61,30 +82,8 @@ class CLIToolBase:
 
 class CommonCLITool(CLIToolBase):
     tool_name: str
-    config_flag: str
     should_add_default_path: bool = False
     ignored_args: frozenset[str] = frozenset(["--check"])
-    config_ext: str = "toml"
-
-    def dumps_config(self, data: dict[Any, Any]) -> str:
-        return toml.dumps(data)
-
-    @contextlib.contextmanager
-    def merged_config(
-        self,
-        local_path: str | Path = "pyproject.toml",
-        common_config: dict[Any, Any] = MAIN_CONFIG,
-    ) -> Generator[Path, None, None]:
-        local_config = toml.loads(Path(local_path).read_text())
-        full_config = deep_update(common_config, local_config)
-        full_config_s = self.dumps_config(full_config)
-
-        target_path = Path(f"./.tmp_config.{self.config_ext}")
-        target_path.write_text(full_config_s)
-        try:
-            yield target_path
-        finally:
-            target_path.unlink()
 
     def run_cmd(self, cmd: Sequence[str]) -> None:
         cmd_s = shlex.join(cmd)
@@ -97,44 +96,108 @@ class CommonCLITool(CLIToolBase):
     def poetry_cmd(self, *parts: str) -> Sequence[str]:
         return ["poetry", "run", "python", "-m", *parts]
 
+    @staticmethod
+    def has_positional_args(args: Sequence[str]) -> bool:
+        # TODO: a better heuristic.
+        for prev_arg, arg in pair_window(["", *args]):
+            if arg.startswith("-"):
+                # assyme an option
+                continue
+            if prev_arg.startswith("--"):
+                # Assume a value for an option
+                continue
+            return True
+        return False
+
+    @staticmethod
+    def read_merged_config(
+        local_path: str | Path = "pyproject.toml",
+        common_config: dict[str, Any] = MAIN_CONFIG,
+    ) -> dict[str, Any]:
+        local_config = read_local_config()
+        return deep_update(common_config, local_config)
+
     def add_default_path(self, extra_args: Sequence[str], path: str = ".") -> Sequence[str]:
         # A very approximate heuristic: do not add path if any non-flags are present.
-        # TODO: a better heuristic.
-        if any(not arg.startswith("-") for arg in extra_args):
+        if self.has_positional_args(extra_args):
             return extra_args
         return [*extra_args, path]
 
     def tool_extra_args(self) -> Sequence[str]:
         return []
 
-    def make_cmd(self, config_path: Path, extra_args: Sequence[str] = ()) -> Sequence[str]:
+    def make_cmd(self, extra_args: Sequence[str] = ()) -> Sequence[str]:
         if self.should_add_default_path:
             extra_args = self.add_default_path(extra_args)
         if self.ignored_args:
             extra_args = [arg for arg in extra_args if arg not in self.ignored_args]
-        return self.poetry_cmd(self.tool_name, self.config_flag, str(config_path), *self.tool_extra_args(), *extra_args)
+        return self.poetry_cmd(self.tool_name, *self.tool_extra_args(), *extra_args)
+
+    def run(self) -> None:
+        cmd = self.make_cmd(extra_args=sys.argv[1:])
+        self.run_cmd(cmd)
+
+
+class ConfiguredCLITool(CommonCLITool):
+    config_flag: str
+    config_ext: str = "toml"
+
+    def dumps_config(self, data: dict[Any, Any]) -> str:
+        return toml.dumps(data)
+
+    @contextlib.contextmanager
+    def merged_config(
+        self,
+        local_path: str | Path = "pyproject.toml",
+        common_config: dict[Any, Any] = MAIN_CONFIG,
+    ) -> Generator[Path, None, None]:
+        full_config = self.read_merged_config()
+        full_config_s = self.dumps_config(full_config)
+
+        target_path = Path(f"./.tmp_config.{self.config_ext}")
+        target_path.write_text(full_config_s)
+        try:
+            yield target_path
+        finally:
+            target_path.unlink()
 
     def run(self) -> None:
         with self.merged_config() as config_path:
-            cmd = self.make_cmd(config_path=config_path, extra_args=sys.argv[1:])
+            config_args = [self.config_flag, str(config_path)]
+            cmd = self.make_cmd(extra_args=[*config_args, *sys.argv[1:]])
             self.run_cmd(cmd)
 
 
-class ISort(CommonCLITool):
+class Autoflake(CommonCLITool):
+    tool_name: str = "autoflake"
+    should_add_default_path: bool = True
+    ignored_args: frozenset[str] = ConfiguredCLITool.ignored_args - {"--check"}
+
+    def tool_extra_args(self) -> Sequence[str]:
+        return ["--in-place", "--remove-all-unused-imports"]
+
+    def add_default_path(self, extra_args: Sequence[str], path: str = ".") -> Sequence[str]:
+        if self.has_positional_args(extra_args):
+            return extra_args
+        filepaths = [str(filepath) for filepath in Path(path).rglob("**/*.py") if filepath.is_file()]
+        return [*filepaths, *extra_args]
+
+
+class ISort(ConfiguredCLITool):
     tool_name: str = "isort"
     config_flag: str = "--settings"
     should_add_default_path: bool = True
-    ignored_args: frozenset[str] = CommonCLITool.ignored_args - {"--check"}
+    ignored_args: frozenset[str] = ConfiguredCLITool.ignored_args - {"--check"}
 
 
-class Black(CommonCLITool):
+class Black(ConfiguredCLITool):
     tool_name: str = "black"
     config_flag: str = "--config"
     should_add_default_path: bool = True
-    ignored_args: frozenset[str] = CommonCLITool.ignored_args - {"--check"}
+    ignored_args: frozenset[str] = ConfiguredCLITool.ignored_args - {"--check"}
 
 
-class Flake8(CommonCLITool):
+class Flake8(ConfiguredCLITool):
     tool_name: str = "flake8"
     config_flag: str = "--config"
     config_ext: str = "cfg"  # as in `setup.cfg`
@@ -143,12 +206,12 @@ class Flake8(CommonCLITool):
         return dumps_configparser({"flake8": data["tool"]["flake8"]})
 
 
-class Mypy(CommonCLITool):
+class Mypy(ConfiguredCLITool):
     tool_name: str = "mypy"
     config_flag: str = "--config-file"
 
 
-class Pytest(CommonCLITool):
+class Pytest(ConfiguredCLITool):
     tool_name: str = "pytest"
     config_flag: str = "-c"
 
@@ -165,8 +228,8 @@ class CLIToolWrapper(CLIToolBase):
 
 
 class Format(CLIToolWrapper):
-    wrapped: tuple[type[CLIToolBase], ...] = (ISort, Black)
+    wrapped: tuple[type[CLIToolBase], ...] = (Autoflake, ISort, Black)
 
 
 class Fulltest(CLIToolWrapper):
-    wrapped: tuple[type[CLIToolBase], ...] = (ISort, Black, Flake8, Mypy, Pytest)
+    wrapped: tuple[type[CLIToolBase], ...] = (*Format.wrapped, Flake8, Mypy, Pytest)
