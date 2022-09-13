@@ -179,7 +179,12 @@ class Autoflake(CommonCLITool):
     def add_default_path(self, extra_args: Sequence[str], path: str = ".") -> Sequence[str]:
         if self.has_positional_args(extra_args):
             return extra_args
-        filepaths = [str(filepath) for filepath in Path(path).rglob("**/*.py") if filepath.is_file()]
+        # TODO: configurable include/exclude patterns.
+        filepaths = [
+            str(filepath)
+            for filepath in Path(path).rglob("**/*.py")
+            if filepath.is_file() and filepath.name != "__init__.py"
+        ]
         return [*filepaths, *extra_args]
 
 
