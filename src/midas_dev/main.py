@@ -169,23 +169,21 @@ class ConfiguredCLITool(CommonCLITool):
 
 
 class Autoflake(CommonCLITool):
+    """
+    Note that this wrapper doesn't support common configuration,
+    because autoflake doesn't have a `--config` flag,
+    so it isn't currently possible to override the extra args this class provides.
+
+    If necessary, this wrapper can be modified use `self.read_merged_config` to
+    build the extra args.
+    """
+
     tool_name: str = "autoflake"
     should_add_default_path: bool = True
     ignored_args: frozenset[str] = ConfiguredCLITool.ignored_args - {"--check"}
 
     def tool_extra_args(self) -> Sequence[str]:
-        return ["--in-place", "--remove-all-unused-imports"]
-
-    def add_default_path(self, extra_args: Sequence[str], path: str = ".") -> Sequence[str]:
-        if self.has_positional_args(extra_args):
-            return extra_args
-        # TODO: configurable include/exclude patterns.
-        filepaths = [
-            str(filepath)
-            for filepath in Path(path).rglob("**/*.py")
-            if filepath.is_file() and filepath.name != "__init__.py"
-        ]
-        return [*filepaths, *extra_args]
+        return ["--in-place", "--recursive", "--ignore-init-module-imports", "--remove-all-unused-imports"]
 
 
 class ISort(ConfiguredCLITool):
