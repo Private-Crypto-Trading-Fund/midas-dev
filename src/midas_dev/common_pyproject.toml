@@ -57,9 +57,14 @@ show_traceback = true
 
 [[tool.mypy.overrides]]
 module = [
+  "aiosonic.*",
   "apscheduler.*",
+  "async_cron.*",
   "decouple",
+  "discord.*",
+  "discord_argparse",
   "dramatiq.*",
+  "gunicorn.*",
   "redis_lock",
   "sentry_dramatiq",
   "uvloop",
