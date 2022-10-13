@@ -1,0 +1,65 @@
+name: test
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+      - main
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: test-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.10"
+  POETRY_VERSION: "1.2.1"
+  POETRY_URL: "https://install.python-poetry.org"
+
+jobs:
+  common_test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v3
+      - name: Cache Poetry cache
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pypoetry
+          key: poetry-cache-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ env.POETRY_VERSION }}
+      - name: Cache packages
+        id: cached-poetry-dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.local
+          key: poetry-${{ runner.os }}-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/poetry.lock') }}-${{ hashFiles('.github/workflows/test.yml') }}
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        id: setup-python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install Poetry
+        run: |
+          set -eu
+          curl -sSL ${{ env.POETRY_URL }} | python - --version ${{ env.POETRY_VERSION }}
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: Install dependencies
+        run: |
+          set -eu
+          mkdir -p ~/.ssh
+          if [ -f ./deploy/id_rsa ]; then cp ./deploy/id_rsa ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa; fi
+          if [ -f ./common/id_rsa ]; then cp ./common/id_rsa ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa; fi
+          poetry install --no-interaction
+          poetry run pip install -U 'pip<23'
+      - name: Run checks
+        env:
+          RUN_ENV: tests
+        run: |
+          set -eu
+          poetry run poetry check
+          poetry run pip check
+          poetry run midtest --check
