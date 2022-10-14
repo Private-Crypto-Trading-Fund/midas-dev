@@ -1,4 +1,4 @@
-name: test
+name: common_test_workflow
 
 on:
   push:
@@ -20,7 +20,7 @@ env:
   POETRY_URL: "https://install.python-poetry.org"
 
 jobs:
-  common_test:
+  common_test_job:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
