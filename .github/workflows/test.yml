@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: anton-v-mi/common-test-test-action@master
+      - uses: anton-v-mi/common-test-test-action/tst2@tst
       - name: Tst
         run: |
           ls -la
