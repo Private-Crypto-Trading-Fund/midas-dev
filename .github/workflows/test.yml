@@ -15,4 +15,10 @@ concurrency:
 
 jobs:
   test:
-    uses: Private-Crypto-Trading-Fund/midas-dev/.github/workflows/common_test.yml@master
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: anton-v-mi/common-test-test-action@master
+      - name: Tst
+        run: |
+          ls -la
