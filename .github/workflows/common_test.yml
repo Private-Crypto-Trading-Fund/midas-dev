@@ -1,22 +1,24 @@
 name: common_test_workflow
 
 on:
-  push:
-    branches:
-      - master
-      - develop
-      - main
-  pull_request:
-  workflow_dispatch:
+  # Can't have `workflow_dispatch` and other triggers here because of the
+  # different `inputs` formats/locations.
   workflow_call:
+    inputs:
+      PYTHON_VERSION:
+        type: string
+        default: "3.10"
+      POETRY_VERSION:
+        type: string
+        default: "1.2.1"
 
 concurrency:
   group: common-test-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: "3.10"
-  POETRY_VERSION: "1.2.1"
+  PYTHON_VERSION: "${{ inputs.PYTHON_VERSION }}"
+  POETRY_VERSION: "${{ inputs.POETRY_VERSION }}"
   POETRY_URL: "https://install.python-poetry.org"
 
 jobs:
@@ -52,7 +54,6 @@ jobs:
           set -eu
           mkdir -p ~/.ssh
           if [ -f ./deploy/id_rsa ]; then cp ./deploy/id_rsa ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa; fi
-          if [ -f ./common/id_rsa ]; then cp ./common/id_rsa ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa; fi
           poetry install --no-interaction
           poetry run pip install -U 'pip<23'
       - name: Run checks
