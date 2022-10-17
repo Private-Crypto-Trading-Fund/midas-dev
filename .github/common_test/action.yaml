@@ -1,0 +1,58 @@
+name: "common_test_action"
+inputs:
+  PYTHON_VERSION:
+    type: string
+    default: "3.10"
+  POETRY_VERSION:
+    type: string
+    default: "1.2.1"
+  POETRY_URL:
+    type: string
+    default: "https://install.python-poetry.org"
+  PIP_VERSION_SPEC:
+    type: string
+    default: "<23"
+runs:
+  using: "composite"
+  steps:
+  - uses: actions/checkout@v3
+  - name: Cache Poetry cache
+    uses: actions/cache@v3
+    with:
+      path: ~/.cache/pypoetry
+      key: poetry-cache--${{ runner.os }}--${{ inputs.PYTHON_VERSION }}--${{ inputs.POETRY_VERSION }}
+  - name: Cache packages
+    id: cached-poetry-dependencies
+    uses: actions/cache@v3
+    with:
+      path: ~/.local
+      key: poetry--${{ runner.os }}--${{ inputs.PYTHON_VERSION }}--${{ hashFiles('**/poetry.lock') }}--${{ hashFiles('.github/workflows/test.yml') }}
+  - name: Set up Python ${{ inputs.PYTHON_VERSION }}
+    id: setup-python
+    uses: actions/setup-python@v4
+    with:
+      python-version: ${{ inputs.PYTHON_VERSION }}
+  - name: Install Poetry
+    shell: bash
+    run: |
+      set -eu
+      curl -sSL "${{ inputs.POETRY_URL }}" | python - --version "${{ inputs.POETRY_VERSION }}"
+      echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+  - name: Install dependencies
+    shell: bash
+    run: |
+      set -eu
+      mkdir -p ~/.ssh
+      if [ -f ./deploy/id_rsa ]; then cp ./deploy/id_rsa ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa; fi
+      poetry install --no-interaction
+      poetry run pip install -U "pip${{ inputs.PIP_VERSION_SPEC }}"
+  - name: Run checks
+    env:
+      RUN_ENV: tests
+    shell: bash
+    run: |
+      set -eu
+      poetry run poetry check
+      poetry run pip check
+      poetry run midtest --check
+      # if [ -f ".pre-commit-config.yaml" ]; then pre-commit run; fi
