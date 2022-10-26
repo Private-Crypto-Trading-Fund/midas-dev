@@ -183,7 +183,7 @@ class Autoflake(CommonCLITool):
     ignored_args: frozenset[str] = ConfiguredCLITool.ignored_args - {"--check"}
 
     def tool_extra_args(self) -> Sequence[str]:
-        return ["--in-place", "--recursive", "--ignore-init-module-imports", "--remove-all-unused-imports"]
+        return ["--in-place", "--recursive", "--ignore-init-module-imports", "--remove-all-unused-imports", "--quiet"]
 
 
 class ISort(ConfiguredCLITool):
