@@ -52,7 +52,7 @@ runs:
       RUN_ENV: tests
     shell: bash
     run: |
-      set -eu
+      set -eux
       poetry run poetry check
       poetry run pip check
       poetry run midtest --check
