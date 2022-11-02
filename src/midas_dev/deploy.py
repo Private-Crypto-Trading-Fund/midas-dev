@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 
+import contextlib
 import functools
 import os
 import shlex
 import subprocess
 import sys
-from collections.abc import Iterable
+import tempfile
+from collections.abc import Generator, Iterable
 from pathlib import Path
 from typing import Any
 
 import toml
 
+HERE = Path(__file__).parent
+CONFIGS_PATH = HERE / "deploy_data"
 DOCKER_TOKEN_PATH = Path.home() / ".config/midas/docker_token"
 _STATUS_CHECK_TPL = r"""
 set -eux
@@ -32,11 +36,11 @@ sudo hostnamectl set-hostname {target_hostname_sq}
 
 sudo apt-get update -y
 sudo apt-get upgrade -y
-sudo apt-get install docker.io docker-compose python3-pip -y
+sudo apt-get install docker.io docker-compose python3-pip python3-requests -y
 sudo snap remove amazon-ssm-agent --purge
 
 sudo groupadd -f docker
-sudo usermod -aG docker ${USER}
+sudo usermod -aG docker "$(whoami)"
 sudo chmod 666 /var/run/docker.sock
 
 sudo systemctl enable docker.service
@@ -52,17 +56,17 @@ sh /tmp/netdata-kickstart.sh \
     --claim-token {nd_claim_token_sq} \
     --claim-url https://app.netdata.cloud
 
-cd {prjname_sq}
-sudo cp deploy/netdata/* /etc/netdata/
+sudo cp /tmp/_netdata_config/* /etc/netdata/
 sudo systemctl restart netdata.service
+mkdir -p {prjname_sq}
 """
 _MAIN_SETUP_TPL = r"""
 set -eux
 export LC_ALL=C
 export {vervar_spec}
 
-cd {prjnqme_sq}
-docker pull $(sq "investmentsteam/${PRJNAME}:${IMAGE_TAG}")
+cd {prjname_sq}
+docker pull {main_image_sq}
 docker-compose -f docker-compose.yml -f deploy/docker-compose_prod.yml pull --include-deps
 docker-compose -f docker-compose.yml -f deploy/docker-compose_prod.yml down
 docker-compose -f docker-compose.yml -f deploy/docker-compose_prod.yml up --no-build --detach
@@ -116,7 +120,7 @@ class DeployManager:
     def _sh(self, cmd: str, capture: bool = True, check: bool = True, **kwargs: Any) -> str:
         self._log(f"$ {cmd}")
         res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE if capture else None, check=check, **kwargs)
-        return (res.stdout or b"").decode(errors="replace")
+        return (res.stdout or b"").decode(errors="replace").rstrip("\n")
 
     def _ssh(self, instance: str, cmd: str) -> str:
         return self._sh(f"ssh {self._sq(instance)} {self._sq(cmd)}")
@@ -128,6 +132,27 @@ class DeployManager:
 
     def _sh_tpl(self, tpl: str, extra_vars: dict[str, str] | None = None) -> str:
         return tpl.format(**self._sh_tpl_vars, **(extra_vars or {}))
+
+    def _render_configs(self, path: Path) -> None:
+        filenames = ["netdata_python_custom_sender.py", "health_alarm_notify.conf"]
+        tpl_replacements = {
+            "___PRJNAME___": self._prjname,
+            "___ENDPOINT___": self._pyproj["tool"]["deploy"]["netdata_sender_endpoint"],
+        }
+        for filename in filenames:
+            src = CONFIGS_PATH / filename
+            content = src.read_text()
+            for tpl_text, res_text in tpl_replacements.items():
+                content = content.replace(tpl_text, res_text)
+            dst = path / filename
+            dst.write_text(content)
+
+    @contextlib.contextmanager
+    def _config_files(self) -> Generator[Path, None, None]:
+        with tempfile.TemporaryDirectory(prefix="_middeploy_configs_") as tempdir:
+            path = Path(tempdir)
+            self._render_configs(path)
+            yield Path(path)
 
     def _initial_setup(self, instance: str) -> None:
         self._log(f"Setting up INITIAL {instance=!r}")
@@ -149,7 +174,8 @@ class DeployManager:
         initial_setup_cmd = self._sh_tpl(_INITIAL_SETUP_TPL, extra_vars=extra_tpl_vars)
 
         self._rsync(instance, args=["--mkpath"], src=str(prod_config_path), dst=conf_relpath)  # `~/.config` file
-        self._rsync(instance, args=["--include=*/", "--include=deploy/netdata/*", "--exclude=*", "--prune-empty-dirs"])
+        with self._config_files() as conffiles_path:
+            self._rsync(instance, src=str(conffiles_path) + "/", dst="/tmp/_netdata_config")
         self._ssh(instance, initial_setup_cmd)
 
     def _main_setup(self, instance: str) -> None:
@@ -185,7 +211,7 @@ class DeployManager:
         except IndexError:
             image_tag = self._request_value("Image version (tag)")
 
-        instances = self._pyproj["tool"]["deploy"]["instances"]
+        instances = self._conf_value("DEPLOY_TARGET_INSTANCES") or self._pyproj["tool"]["deploy"]["instances"]
         vervar = f"{self._prjname.upper()}_IMAGE_VERSION"  # e.g. SOMEPROJ_IMAGE_VERSION
         self._sh_tpl_vars["prjname_sq"] = self._sq(self._prjname)
         self._sh_tpl_vars["vervar_spec"] = f"{vervar}={self._sq(image_tag)}"
@@ -200,4 +226,4 @@ class DeployManager:
 
 
 if __name__ == "__main__":
-    main()
+    DeployManager.run_cli()

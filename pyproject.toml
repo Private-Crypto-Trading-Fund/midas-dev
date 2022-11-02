@@ -6,7 +6,7 @@ authors = ["Anton V <anton.vasilyev@midas.investments>"]
 
 [tool.poetry.scripts]
 midblack = "midas_dev.main:Black.run_cli"
-middeploy = "midas_dev.deploy:DeployManager.main"
+middeploy = "midas_dev.deploy:DeployManager.run_cli"
 midflake8 = "midas_dev.main:Flake8.run_cli"
 midfmt = "midas_dev.main:Format.run_cli"
 midisort = "midas_dev.main:ISort.run_cli"
@@ -68,6 +68,7 @@ django = [
 
 [tool.poetry.group.dev.dependencies]
 types-toml = "^0.10.8"
+types-requests = "^2.28.11.2"
 
 [build-system]
 requires = ["poetry-core>=1.1.0"]
