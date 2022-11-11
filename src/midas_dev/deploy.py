@@ -67,9 +67,9 @@ export {vervar_spec}
 
 cd {prjname_sq}
 docker pull {main_image_sq}
-docker-compose -f docker-compose.yml -f deploy/docker-compose_prod.yml pull --include-deps
-docker-compose -f docker-compose.yml -f deploy/docker-compose_prod.yml down
-docker-compose -f docker-compose.yml -f deploy/docker-compose_prod.yml up --no-build --detach
+docker-compose -f docker-compose.yml -f deploy/docker-compose.prod.yml pull --include-deps
+docker-compose -f docker-compose.yml -f deploy/docker-compose.prod.yml down
+docker-compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up --no-build --detach
 
 sleep 10
 docker ps
@@ -126,7 +126,9 @@ class DeployManager:
         return self._sh(f"ssh {self._sq(instance)} {self._sq(cmd)}")
 
     def _rsync(self, instance, src: str = ".", dst: str | None = None, args: Iterable[str] = (), **kwargs: Any) -> None:
-        cmd_pieces = ["rsync", "--verbose", "--recursive", *args, src, f"{instance}:{dst or self._prjname}/"]
+        if not dst:
+            dst = f"{self._prjname}/"
+        cmd_pieces = ["rsync", "--verbose", "--recursive", *args, src, f"{instance}:{dst}"]
         cmd = self._sh_join(cmd_pieces)
         self._sh(cmd, capture=False, **kwargs)
 
