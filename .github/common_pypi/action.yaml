@@ -1,0 +1,79 @@
+# # Usage:
+# name: "Publish to pypi"
+# on:
+#   push:
+#     tags:
+#       - "v*"
+# jobs:
+#   build:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: Private-Crypto-Trading-Fund/midas-dev/.github/common_pypi@master
+#         env:
+#           PYPI_PASSWORD: "${{ secrets.PYPI_TOKEN }}"
+name: "common_pypi_action"
+inputs:
+  PYTHON_VERSION:
+    type: string
+    default: "3.10"
+  PIP_VERSION_SPEC:
+    type: string
+    default: "<23"
+  PYPI_USER:
+    type: string
+    default: "__token__"
+  PYPI_REPOSITORY:
+    type: string
+    default: ""
+  TWINE_EXTRA_ARGS:
+    type: string
+    default: "--verbose"
+runs:
+  using: "composite"
+  steps:
+
+  - uses: actions/checkout@v3
+  # https://stackoverflow.com/a/59894223
+  - name: "Exit if not on master branch"
+    if: "github.event.base_ref != 'refs/heads/master'"
+    shell: bash
+    run: |
+      set -Eeuo pipefail
+      echo "github.event.base_ref = ${{ github.event.base_ref }} != refs/heads/master"
+      exit -1
+  - name: "Exit if not on a version tag"
+    shell: bash
+    run: |
+      set -Eeuo pipefail
+      set -x
+      CURRENT_TAG="$(git describe --exact-match --tags HEAD)"  # fails if HEAD has no tag
+      if [[ ! "$CURRENT_TAG" =~ ^v.* ]]; then
+          echo "Unexpected CURRENT_TAG=${CURRENT_TAG}" >&2
+          exit 1
+      fi
+
+  - name: Set up Python ${{ inputs.PYTHON_VERSION }}
+    id: setup-python
+    uses: actions/setup-python@v4
+    with:
+      python-version: ${{ inputs.PYTHON_VERSION }}
+  - name: "Set up python dependencies"
+    shell: bash
+    run: |
+      set -Eeuo pipefail
+      set -x
+      pip install --upgrade "pip${{ inputs.PIP_VERSION_SPEC }}"
+      pip install --upgrade "build~=0.9.0" "twine~=4.0.1" "wheel~=0.38.4"
+
+  - name: Publish
+    shell: bash
+    env:
+      TWINE_PASSWORD: "${{ env.PYPI_PASSWORD }}"
+    run: |
+      set -Eeuo pipefail
+      set -x
+
+      python -m build
+      TWINE_USERNAME="${{ inputs.PYPI_USER }}" \
+      TWINE_REPOSITORY_URL="${{ inputs.PYPI_REPOSITORY }}" \
+      twine upload ${{ inputs.TWINE_EXTRA_ARGS }} dist/*
