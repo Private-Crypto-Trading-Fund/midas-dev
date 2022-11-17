@@ -45,7 +45,7 @@ runs:
       mkdir -p ~/.ssh
       if [ -f ./deploy/id_rsa ]; then cp ./deploy/id_rsa ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa; fi
       if [ -d ./deploy/ssh ]; then cp ./deploy/ssh/* ~/.ssh/ && chmod 600 ~/.ssh/id_*; fi
-      poetry install --no-interaction
+      poetry install --no-interaction --sync
       poetry run pip install -U "pip${{ inputs.PIP_VERSION_SPEC }}"
   - name: Run checks
     env:
