@@ -19,7 +19,9 @@ jobs:
       - uses: ./.github/common_bump
         with:
           CODE_PATH: "./"  # Bump on all changes, not just `src`
-      # # TODO?:
-      # - uses: ./.github/common_pypi
-      #   env:
-      #     PYPI_PASSWORD: "${{ secrets.PYPI_TOKEN }}"
+      # Apparently, git pushes from workflows don't trigger other workflows
+      # (to prevent infinite recursion, at the very least)
+      # so the publish has to be done within the same workflow as the version bump.
+      - uses: ./.github/common_pypi
+        env:
+          PYPI_PASSWORD: "${{ secrets.PYPI_TOKEN }}"
