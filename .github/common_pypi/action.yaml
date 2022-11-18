@@ -28,14 +28,20 @@ inputs:
   TWINE_EXTRA_ARGS:
     type: string
     default: "--verbose"
+  DO_CHECKOUT:
+    type: boolean
+    default: false
 runs:
   using: "composite"
   steps:
 
-  - uses: actions/checkout@v3
+  - if: "inputs.DO_CHECKOUT"
+    uses: actions/checkout@v3
   # https://stackoverflow.com/a/59894223
   - name: "Exit if not on master branch"
-    if: "github.event.base_ref != 'refs/heads/master'"
+    if: |
+      github.event.base_ref != 'refs/heads/master'
+      and github.event.base_ref != 'refs/heads/main'
     shell: bash
     run: |
       set -Eeuo pipefail
