@@ -1,0 +1,21 @@
+name: "Bump version"
+on:
+  push:
+    branches:
+      - master
+      - main
+
+concurrency:
+  group: bump-${{ github.head_ref || github.run_id }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Example for other repos:
+      # - uses: Private-Crypto-Trading-Fund/midas-dev/.github/common_bump@master
+      - uses: actions/checkout@v3  # For `./.github/` to exist.
+      - uses: ./.github/common_bump
+        with:
+          CODE_PATH: "./"  # Bump on all changes, not just `src`

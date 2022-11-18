@@ -1,0 +1,76 @@
+name: "common_bump_action"
+inputs:
+  PYTHON_VERSION:
+    type: string
+    default: "3.10"
+  POETRY_VERSION:
+    type: string
+    default: "1.2.1"
+  POETRY_URL:
+    type: string
+    default: "https://install.python-poetry.org"
+
+  CODE_PATH:
+    type: string
+    default: "./src/"
+  RELEASE_TYPE:
+    type: string
+    default: "minor"
+
+  GIT_USER_NAME:
+    type: string
+    default: "midas-dev"
+  GIT_USER_EMAIL:
+    type: string
+    default: "midas-dev@midas.investments"
+
+runs:
+  using: "composite"
+  steps:
+  # ... but really, this should be in a base image or something ...
+  - name: Set up Python ${{ inputs.PYTHON_VERSION }}
+    id: setup-python
+    uses: actions/setup-python@v4
+    with:
+      python-version: ${{ inputs.PYTHON_VERSION }}
+  - name: Install Poetry
+    shell: bash
+    run: |
+      set -eu
+      curl -sSL "${{ inputs.POETRY_URL }}" | python - --version "${{ inputs.POETRY_VERSION }}"
+      echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+  - uses: actions/checkout@v3
+    with:
+      fetch-depth: 0  # all history
+      submodules: recursive  # recommended default
+
+  - name: Release
+    shell: bash
+    run: |
+      set -Eeuo pipefail
+      set -x
+
+      branch="$(git branch --show-current)"
+      if [ "$branch" != "master" ] && [ "$branch" != "main" ]; then
+          echo "Unexpected branch=${branch}" >&2
+          exit 1
+      fi
+
+      LAST_VER="$(poetry version --short)"
+      changes="$(git diff --stat "refs/tags/v${LAST_VER}" "${{ inputs.CODE_PATH }}")"
+      if [ -z "$changes" ]; then
+          echo "No changes since v${LAST_VER}"
+          exit 0
+      fi
+
+      poetry version "${{ inputs.RELEASE_TYPE }}"
+      NEW_VER="$(poetry version --short)"
+
+      git config user.name "${{ inputs.GIT_USER_NAME }}"
+      git config user.email "${{ inputs.GIT_USER_EMAIL }}"
+
+      git commit -am "Release ${NEW_VER}"
+      git tag "v${NEW_VER}"
+      git push
+      git push --tags
