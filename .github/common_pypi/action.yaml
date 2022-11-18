@@ -35,13 +35,14 @@ runs:
   using: "composite"
   steps:
 
-  - if: "inputs.DO_CHECKOUT"
+  - if: "inputs.DO_CHECKOUT == true"
     uses: actions/checkout@v3
   # https://stackoverflow.com/a/59894223
   - name: "Exit if not on master branch"
     if: |
-      github.event.base_ref != 'refs/heads/master'
-      and github.event.base_ref != 'refs/heads/main'
+      inputs.DO_CHECKOUT == true
+      && github.event.base_ref != 'refs/heads/master'
+      && github.event.base_ref != 'refs/heads/main'
     shell: bash
     run: |
       set -Eeuo pipefail
