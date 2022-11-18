@@ -19,3 +19,7 @@ jobs:
       - uses: ./.github/common_bump
         with:
           CODE_PATH: "./"  # Bump on all changes, not just `src`
+      # # TODO?:
+      # - uses: ./.github/common_pypi
+      #   env:
+      #     PYPI_PASSWORD: "${{ secrets.PYPI_TOKEN }}"
