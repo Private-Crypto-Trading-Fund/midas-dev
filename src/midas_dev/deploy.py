@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import contextlib
 import functools
 import os
@@ -12,6 +11,40 @@ from pathlib import Path
 from typing import Any
 
 import toml
+
+HELP = """
+Script for one-run (re)deploying.
+
+Recommended usage: deploy a specific version:
+
+    poetry run middeploy v1.2.3
+
+Easier usage: deploy the latest version:
+
+    poetry run middeploy latest
+
+Testing usage: deploy on a specified single host:
+
+    DEPLOY_TARGET_INSTANCES=ubuntu@ec2-1-2-3-4.eu-central-1.compute.amazonaws.com  poetry run middeploy latest
+
+Introduction to a new project:
+
+  * Configure `pyproject.toml` `[tool.deploy]`:
+    * `instances`: space-separated hostnames to deploy onto.
+      See `DEPLOY_TARGET_INSTANCES` override example above.
+    * `netdata_claim_token`, `netdata_claim_rooms`, `netdata_sender_endpoint`:
+      configuration from https://app.netdata.cloud/
+    * `./docker-compose.yaml` should specify development-usable containers.
+    * `./deploy/docker-compose.prod.yaml` should specify the production configuration overrides
+      (on top of `./docker-compose.yaml`).
+      It *must* use `${PROJECT_NAME}_IMAGE_VERSION` env variable for the app images.
+  * Configure own environment:
+    * Docker token into `~/.config/midas/docker_token`
+    * Produciton config into `~/.config/midas/${project_name}/.env`
+  * Test the deployment on a temporary aws host.
+
+"""
+
 
 HERE = Path(__file__).parent
 CONFIGS_PATH = HERE / "deploy_data"
@@ -67,9 +100,9 @@ export {vervar_spec}
 
 cd {prjname_sq}
 docker pull {main_image_sq}
-docker-compose -f docker-compose.yml -f deploy/docker-compose.prod.yml pull --include-deps
-docker-compose -f docker-compose.yml -f deploy/docker-compose.prod.yml down
-docker-compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up --no-build --detach
+docker-compose -f docker-compose.yaml -f deploy/docker-compose.prod.yaml pull --include-deps
+docker-compose -f docker-compose.yaml -f deploy/docker-compose.prod.yaml down
+docker-compose -f docker-compose.yaml -f deploy/docker-compose.prod.yaml up --no-build --detach
 
 sleep 10
 docker ps
@@ -224,6 +257,9 @@ class DeployManager:
 
     @classmethod
     def run_cli(cls) -> None:
+        if "--help" in sys.argv:
+            sys.stdout.write(HELP + "\n")
+            return
         cls().main()
 
 
