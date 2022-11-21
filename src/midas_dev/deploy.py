@@ -8,7 +8,7 @@ import sys
 import tempfile
 from collections.abc import Generator, Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import toml
 
@@ -25,13 +25,17 @@ Easier usage: deploy the latest version:
 
 Testing usage: deploy on a specified single host:
 
-    DEPLOY_TARGET_INSTANCES=ubuntu@ec2-1-2-3-4.eu-central-1.compute.amazonaws.com  poetry run middeploy latest
+    DEPLOY_TARGET_INSTANCES=ubuntu@ec2-1-2-3-4.eu-central-1.compute.amazonaws.com \
+    DEPLOY_SSH_OPTIONS="-l ubuntu" \
+    poetry run middeploy latest
 
 Introduction to a new project:
 
   * Configure `pyproject.toml` `[tool.deploy]`:
     * `instances`: space-separated hostnames to deploy onto.
       See `DEPLOY_TARGET_INSTANCES` override example above.
+    * `ssh_options`: Optional extra options for `ssh` (and rsync-over-ssh).
+      Defaults to `-p 22022 -l ubuntu`.
     * `netdata_claim_token`, `netdata_claim_rooms`, `netdata_sender_endpoint`:
       configuration from https://app.netdata.cloud/
     * `./docker-compose.yaml` should specify development-usable containers.
@@ -108,6 +112,15 @@ sleep 10
 docker ps
 """
 
+TType = TypeVar("TType")
+
+
+def ensure_type(value: Any, type_: type[TType]) -> TType:
+    """`cast(value, type_)` with runtime `isinstance` validation"""
+    if not isinstance(value, type_):
+        raise ValueError("Unexpected value type", dict(type_=type_, value=value))
+    return value
+
 
 class DeployManager:
     """
@@ -145,7 +158,15 @@ class DeployManager:
 
     @functools.cached_property
     def _prjname(self) -> str:
-        return self._pyproj["tool"]["poetry"]["name"]
+        return ensure_type(self._pyproj["tool"]["poetry"]["name"], str)
+
+    @functools.cached_property
+    def _ssh_options(self) -> str:
+        return (
+            self._conf_value("DEPLOY_SSH_OPTIONS")
+            or self._pyproj["tool"]["deploy"].get("ssh_options")
+            or "-p 22022 -l ubuntu"
+        )
 
     def _log(self, message: str) -> None:
         sys.stderr.write(f"+ {message}\n")
@@ -156,12 +177,22 @@ class DeployManager:
         return (res.stdout or b"").decode(errors="replace").rstrip("\n")
 
     def _ssh(self, instance: str, cmd: str) -> str:
-        return self._sh(f"ssh {self._sq(instance)} {self._sq(cmd)}")
+        return self._sh(f"ssh  {self._ssh_options}  {self._sq(instance)}  {self._sq(cmd)}")
 
-    def _rsync(self, instance, src: str = ".", dst: str | None = None, args: Iterable[str] = (), **kwargs: Any) -> None:
+    def _rsync(
+        self, instance: str, src: str = ".", dst: str | None = None, args: Iterable[str] = (), **kwargs: Any
+    ) -> None:
         if not dst:
             dst = f"{self._prjname}/"
-        cmd_pieces = ["rsync", "--verbose", "--recursive", *args, src, f"{instance}:{dst}"]
+        cmd_pieces = [
+            "rsync",
+            f"--rsh=ssh {self._ssh_options}",
+            "--verbose",
+            "--recursive",
+            *args,
+            src,
+            f"{instance}:{dst}",
+        ]
         cmd = self._sh_join(cmd_pieces)
         self._sh(cmd, capture=False, **kwargs)
 
@@ -240,7 +271,7 @@ class DeployManager:
             self._initial_setup(instance)
         self._main_setup(instance)
 
-    def main(self):
+    def main(self) -> None:
         try:
             image_tag = sys.argv[1]
         except IndexError:
