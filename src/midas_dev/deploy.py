@@ -83,8 +83,8 @@ sudo systemctl restart docker
 
 echo {docker_token_sq} | docker login --username {docker_username_sq} --password-stdin
 
-sudo curl https://my-netdata.io/kickstart.sh > /tmp/netdata-kickstart.sh
-sh /tmp/netdata-kickstart.sh \
+curl -Ss https://my-netdata.io/kickstart.sh > /tmp/netdata-kickstart.sh
+sh -x /tmp/netdata-kickstart.sh \
     --claim-rooms {nd_claim_rooms_sq} \
     --claim-token {nd_claim_token_sq} \
     --claim-url https://app.netdata.cloud
