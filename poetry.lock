@@ -164,6 +164,20 @@ optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
 
 [[package]]
+name = "coloredlogs"
+version = "15.0.1"
+description = "Colored terminal output for Python's logging module"
+category = "main"
+optional = false
+python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
+
+[package.dependencies]
+humanfriendly = ">=9.1"
+
+[package.extras]
+cron = ["capturer (>=2.4)"]
+
+[[package]]
 name = "coverage"
 version = "6.4.4"
 description = "Code coverage measurement for Python"
@@ -482,6 +496,17 @@ all = ["chardet (>=2.2)", "genshi", "lxml"]
 chardet = ["chardet (>=2.2)"]
 genshi = ["genshi"]
 lxml = ["lxml"]
+
+[[package]]
+name = "humanfriendly"
+version = "10.0"
+description = "Human friendly output for text interfaces using Python"
+category = "main"
+optional = false
+python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*"
+
+[package.dependencies]
+pyreadline3 = {version = "*", markers = "sys_platform == \"win32\" and python_version >= \"3.8\""}
 
 [[package]]
 name = "idna"
@@ -814,6 +839,14 @@ python-versions = ">=3.6.8"
 diagrams = ["jinja2", "railroad-diagrams"]
 
 [[package]]
+name = "pyreadline3"
+version = "3.4.1"
+description = "A python implementation of GNU readline."
+category = "main"
+optional = false
+python-versions = "*"
+
+[[package]]
 name = "pyrsistent"
 version = "0.18.1"
 description = "Persistent/Functional/Immutable data structures"
@@ -1144,7 +1177,7 @@ django = ["django-extra-checks", "django-test-migrations", "django-debug-toolbar
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "a96f6ba9b07fef0e9a49c0188869aebd168a9ce7434e9c910abb4d8ebef3d7a1"
+content-hash = "2234f34a424e31d21b68204477c0d3664fe1a1515244fb2788a68a728ea6997d"
 
 [metadata.files]
 appdirs = [
@@ -1283,6 +1316,10 @@ click = [
 colorama = [
     {file = "colorama-0.4.5-py2.py3-none-any.whl", hash = "sha256:854bf444933e37f5824ae7bfc1e98d5bce2ebe4160d46b5edf346a89358e99da"},
     {file = "colorama-0.4.5.tar.gz", hash = "sha256:e6c6b4334fc50988a639d9b98aa429a0b57da6e17b9a44f0451f930b6967b7a4"},
+]
+coloredlogs = [
+    {file = "coloredlogs-15.0.1-py2.py3-none-any.whl", hash = "sha256:612ee75c546f53e92e70049c9dbfcc18c935a2b9a53b66085ce9ef6a6e5c0934"},
+    {file = "coloredlogs-15.0.1.tar.gz", hash = "sha256:7c991aa71a4577af2f82600d8f8f3a89f936baeaf9b50a9c197da014e5bf16b0"},
 ]
 coverage = [
     {file = "coverage-6.4.4-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:e7b4da9bafad21ea45a714d3ea6f3e1679099e420c8741c74905b92ee9bfa7cc"},
@@ -1487,6 +1524,10 @@ html5lib = [
     {file = "html5lib-1.1-py2.py3-none-any.whl", hash = "sha256:0d78f8fde1c230e99fe37986a60526d7049ed4bf8a9fadbad5f00e22e58e041d"},
     {file = "html5lib-1.1.tar.gz", hash = "sha256:b2e5b40261e20f354d198eae92afc10d750afb487ed5e50f9c4eaf07c184146f"},
 ]
+humanfriendly = [
+    {file = "humanfriendly-10.0-py2.py3-none-any.whl", hash = "sha256:1697e1a8a8f550fd43c2865cd84542fc175a61dcb779b6fee18cf6b6ccba1477"},
+    {file = "humanfriendly-10.0.tar.gz", hash = "sha256:6b0b831ce8f15f7300721aa49829fc4e83921a9a301cc7f606be6686a2288ddc"},
+]
 idna = [
     {file = "idna-3.4-py3-none-any.whl", hash = "sha256:90b77e79eaa3eba6de819a0c442c0b4ceefc341a7a2ab77d7562bf49f425c5c2"},
     {file = "idna-3.4.tar.gz", hash = "sha256:814f528e8dead7d329833b91c5faa87d60bf71824cd12a7530b5526063d02cb4"},
@@ -1680,6 +1721,10 @@ pylev = [
 pyparsing = [
     {file = "pyparsing-3.0.9-py3-none-any.whl", hash = "sha256:5026bae9a10eeaefb61dab2f09052b9f4307d44aee4eda64b309723d8d206bbc"},
     {file = "pyparsing-3.0.9.tar.gz", hash = "sha256:2b020ecf7d21b687f219b71ecad3631f644a47f01403fa1d1036b0c6416d70fb"},
+]
+pyreadline3 = [
+    {file = "pyreadline3-3.4.1-py3-none-any.whl", hash = "sha256:b0efb6516fd4fb07b45949053826a62fa4cb353db5be2bbb4a7aa1fdd1e345fb"},
+    {file = "pyreadline3-3.4.1.tar.gz", hash = "sha256:6f3d1f7b8a31ba32b73917cefc1f28cc660562f39aea8646d30bd6eff21f7bae"},
 ]
 pyrsistent = [
     {file = "pyrsistent-0.18.1-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:df46c854f490f81210870e509818b729db4488e1f30f2a1ce1698b2295a878d1"},
