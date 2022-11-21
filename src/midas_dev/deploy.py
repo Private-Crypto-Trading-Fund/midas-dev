@@ -176,8 +176,8 @@ class DeployManager:
         res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE if capture else None, check=check, **kwargs)
         return (res.stdout or b"").decode(errors="replace").rstrip("\n")
 
-    def _ssh(self, instance: str, cmd: str) -> str:
-        return self._sh(f"ssh  {self._ssh_options}  {self._sq(instance)}  {self._sq(cmd)}")
+    def _ssh(self, instance: str, cmd: str, capture: bool = True) -> str:
+        return self._sh(f"ssh  {self._ssh_options}  {self._sq(instance)}  {self._sq(cmd)}", capture=capture)
 
     def _rsync(
         self, instance: str, src: str = ".", dst: str | None = None, args: Iterable[str] = (), **kwargs: Any
@@ -242,7 +242,7 @@ class DeployManager:
         self._rsync(instance, args=["--mkpath"], src=str(prod_config_path), dst=conf_relpath)  # `~/.config` file
         with self._config_files() as conffiles_path:
             self._rsync(instance, src=str(conffiles_path) + "/", dst="/tmp/_netdata_config")
-        self._ssh(instance, initial_setup_cmd)
+        self._ssh(instance, initial_setup_cmd, capture=False)
 
     def _main_setup(self, instance: str) -> None:
         main_setup_cmd = self._sh_tpl(_MAIN_SETUP_TPL)
@@ -260,7 +260,7 @@ class DeployManager:
                 "--prune-empty-dirs",
             ],
         )
-        self._ssh(instance, main_setup_cmd)
+        self._ssh(instance, main_setup_cmd, capture=False)
 
     def _process_instance(self, instance: str) -> None:
         self._log(f"Setting up {instance=!r}")
