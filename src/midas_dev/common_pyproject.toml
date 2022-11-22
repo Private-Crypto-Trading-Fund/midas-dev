@@ -18,6 +18,8 @@ enable-extensions = ["G", "FS003"]
 ignore = [
   # If `flake8-future-import` is present, only require `from __future__ import annotations`.
   "FI10", "FI11", "FI12", "FI13", "FI14", "FI15", "FI16", "FI17", "FI58",
+  # Prefer “line break before binary operator” over W504 “line break after binary operator”
+  "W503",
 ]
 per-file-ignores = [
   "__init__.py:F401,F403",  # “imported but unused”, “'import *' used”

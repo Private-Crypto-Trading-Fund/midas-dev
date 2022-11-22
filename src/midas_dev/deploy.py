@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import contextlib
 import functools
 import os
@@ -9,9 +8,47 @@ import sys
 import tempfile
 from collections.abc import Generator, Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import toml
+
+HELP = """
+Script for one-run (re)deploying.
+
+Recommended usage: deploy a specific version:
+
+    poetry run middeploy v1.2.3
+
+Easier usage: deploy the latest version:
+
+    poetry run middeploy latest
+
+Testing usage: deploy on a specified single host:
+
+    DEPLOY_TARGET_INSTANCES=ubuntu@ec2-1-2-3-4.eu-central-1.compute.amazonaws.com \
+    DEPLOY_SSH_OPTIONS="-l ubuntu" \
+    poetry run middeploy latest
+
+Introduction to a new project:
+
+  * Configure `pyproject.toml` `[tool.deploy]`:
+    * `instances`: space-separated hostnames to deploy onto.
+      See `DEPLOY_TARGET_INSTANCES` override example above.
+    * `ssh_options`: Optional extra options for `ssh` (and rsync-over-ssh).
+      Defaults to `-p 22022 -l ubuntu`.
+    * `netdata_claim_token`, `netdata_claim_rooms`, `netdata_sender_endpoint`:
+      configuration from https://app.netdata.cloud/
+    * `./docker-compose.yaml` should specify development-usable containers.
+    * `./deploy/docker-compose.prod.yaml` should specify the production configuration overrides
+      (on top of `./docker-compose.yaml`).
+      It *must* use `${PROJECT_NAME}_IMAGE_VERSION` env variable for the app images.
+  * Configure own environment:
+    * Docker token into `~/.config/midas/docker_token`
+    * Produciton config into `~/.config/midas/${project_name}/.env`
+  * Test the deployment on a temporary aws host.
+
+"""
+
 
 HERE = Path(__file__).parent
 CONFIGS_PATH = HERE / "deploy_data"
@@ -50,8 +87,8 @@ sudo systemctl restart docker
 
 echo {docker_token_sq} | docker login --username {docker_username_sq} --password-stdin
 
-sudo curl https://my-netdata.io/kickstart.sh > /tmp/netdata-kickstart.sh
-sh /tmp/netdata-kickstart.sh \
+curl -Ss https://my-netdata.io/kickstart.sh > /tmp/netdata-kickstart.sh
+sh -x /tmp/netdata-kickstart.sh \
     --claim-rooms {nd_claim_rooms_sq} \
     --claim-token {nd_claim_token_sq} \
     --claim-url https://app.netdata.cloud
@@ -67,13 +104,22 @@ export {vervar_spec}
 
 cd {prjname_sq}
 docker pull {main_image_sq}
-docker-compose -f docker-compose.yml -f deploy/docker-compose.prod.yml pull --include-deps
-docker-compose -f docker-compose.yml -f deploy/docker-compose.prod.yml down
-docker-compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up --no-build --detach
+docker-compose -f docker-compose.yaml -f deploy/docker-compose.prod.yaml pull --include-deps
+docker-compose -f docker-compose.yaml -f deploy/docker-compose.prod.yaml down
+docker-compose -f docker-compose.yaml -f deploy/docker-compose.prod.yaml up --no-build --detach
 
 sleep 10
 docker ps
 """
+
+TType = TypeVar("TType")
+
+
+def ensure_type(value: Any, type_: type[TType]) -> TType:
+    """`cast(value, type_)` with runtime `isinstance` validation"""
+    if not isinstance(value, type_):
+        raise ValueError("Unexpected value type", dict(type_=type_, value=value))
+    return value
 
 
 class DeployManager:
@@ -112,7 +158,15 @@ class DeployManager:
 
     @functools.cached_property
     def _prjname(self) -> str:
-        return self._pyproj["tool"]["poetry"]["name"]
+        return ensure_type(self._pyproj["tool"]["poetry"]["name"], str)
+
+    @functools.cached_property
+    def _ssh_options(self) -> str:
+        return (
+            self._conf_value("DEPLOY_SSH_OPTIONS")
+            or self._pyproj["tool"]["deploy"].get("ssh_options")
+            or "-p 22022 -l ubuntu"
+        )
 
     def _log(self, message: str) -> None:
         sys.stderr.write(f"+ {message}\n")
@@ -122,13 +176,23 @@ class DeployManager:
         res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE if capture else None, check=check, **kwargs)
         return (res.stdout or b"").decode(errors="replace").rstrip("\n")
 
-    def _ssh(self, instance: str, cmd: str) -> str:
-        return self._sh(f"ssh {self._sq(instance)} {self._sq(cmd)}")
+    def _ssh(self, instance: str, cmd: str, capture: bool = True) -> str:
+        return self._sh(f"ssh  {self._ssh_options}  {self._sq(instance)}  {self._sq(cmd)}", capture=capture)
 
-    def _rsync(self, instance, src: str = ".", dst: str | None = None, args: Iterable[str] = (), **kwargs: Any) -> None:
+    def _rsync(
+        self, instance: str, src: str = ".", dst: str | None = None, args: Iterable[str] = (), **kwargs: Any
+    ) -> None:
         if not dst:
             dst = f"{self._prjname}/"
-        cmd_pieces = ["rsync", "--verbose", "--recursive", *args, src, f"{instance}:{dst}"]
+        cmd_pieces = [
+            "rsync",
+            f"--rsh=ssh {self._ssh_options}",
+            "--verbose",
+            "--recursive",
+            *args,
+            src,
+            f"{instance}:{dst}",
+        ]
         cmd = self._sh_join(cmd_pieces)
         self._sh(cmd, capture=False, **kwargs)
 
@@ -178,7 +242,7 @@ class DeployManager:
         self._rsync(instance, args=["--mkpath"], src=str(prod_config_path), dst=conf_relpath)  # `~/.config` file
         with self._config_files() as conffiles_path:
             self._rsync(instance, src=str(conffiles_path) + "/", dst="/tmp/_netdata_config")
-        self._ssh(instance, initial_setup_cmd)
+        self._ssh(instance, initial_setup_cmd, capture=False)
 
     def _main_setup(self, instance: str) -> None:
         main_setup_cmd = self._sh_tpl(_MAIN_SETUP_TPL)
@@ -196,7 +260,7 @@ class DeployManager:
                 "--prune-empty-dirs",
             ],
         )
-        self._ssh(instance, main_setup_cmd)
+        self._ssh(instance, main_setup_cmd, capture=False)
 
     def _process_instance(self, instance: str) -> None:
         self._log(f"Setting up {instance=!r}")
@@ -207,7 +271,7 @@ class DeployManager:
             self._initial_setup(instance)
         self._main_setup(instance)
 
-    def main(self):
+    def main(self) -> None:
         try:
             image_tag = sys.argv[1]
         except IndexError:
@@ -224,6 +288,9 @@ class DeployManager:
 
     @classmethod
     def run_cli(cls) -> None:
+        if "--help" in sys.argv:
+            sys.stdout.write(HELP + "\n")
+            return
         cls().main()
 
 
