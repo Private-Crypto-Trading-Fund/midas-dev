@@ -253,7 +253,7 @@ class DeployManager:
             instance,
             args=[
                 "--include=*/",
-                "--include=*compose*.y*ml",
+                "--include=*compose*.yaml",
                 "--include=deploy/Caddyfile",
                 "--include=deploy/netdata/*",
                 "--exclude=*",
