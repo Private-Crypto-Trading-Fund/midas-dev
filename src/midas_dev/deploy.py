@@ -2,6 +2,7 @@
 import contextlib
 import functools
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -220,6 +221,18 @@ class DeployManager:
             self._render_configs(path)
             yield Path(path)
 
+    def _make_hostname(self, instance: str) -> str:
+        hostname = instance.rsplit("@", 1)[-1]
+
+        # Convert ec2 hostnames to something more readable.
+        # e.g. "ec2-11-22-33-44.eu-central-1.compute.amazonaws.com"
+        match = re.search(r"^ec2-([0-9-]+)\.(?:[^.]+).compute.amazonaws.com$", hostname)
+        if not match:  # Not an expected ec2 hostname.
+            return hostname
+        prj = self._prjname
+        addr = match.group(1)  # e.g. "11-22-33-44"
+        return f"{prj}-{addr}.{prj}.midas-io.services"
+
     def _initial_setup(self, instance: str) -> None:
         self._log(f"Setting up INITIAL {instance=!r}")
 
@@ -230,8 +243,9 @@ class DeployManager:
 
         docker_token = self._get_docker_token()
 
+        hostname = self._make_hostname(instance)
         extra_tpl_vars = {
-            "target_hostname_sq": self._sq(instance.rsplit("@", 1)[-1]),  # strip username just in case,
+            "target_hostname_sq": self._sq(hostname),
             "docker_username_sq": self._sq(self._conf_value("DOCKER_USERNAME") or "midasinvestments"),
             "docker_token_sq": self._sq(docker_token),
             "nd_claim_rooms_sq": self._sq(self._pyproj["tool"]["deploy"]["netdata_claim_rooms"]),
@@ -255,7 +269,6 @@ class DeployManager:
                 "--include=*/",
                 "--include=*compose*.yaml",
                 "--include=deploy/Caddyfile",
-                "--include=deploy/netdata/*",
                 "--exclude=*",
                 "--prune-empty-dirs",
             ],
