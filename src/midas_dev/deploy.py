@@ -54,32 +54,54 @@ Introduction to a new project:
 HERE = Path(__file__).parent
 CONFIGS_PATH = HERE / "deploy_data"
 DOCKER_TOKEN_PATH = Path.home() / ".config/midas/docker_token"
-_STATUS_CHECK_TPL = r"""
+
+
+_COMMON_SHELL_HEAD = r"""
 set -eux
+export LC_ALL=C DEBIAN_FRONTEND=noninteractive DEBIAN_PRIORITY=critical NEEDRESTART_MODE=a
+"""
+_COMMON_SHELL_TPL_HEAD_BASE = r"""
+export {vervar_spec}
+"""
+_COMMON_SHELL_TPL_HEAD = _COMMON_SHELL_HEAD + _COMMON_SHELL_TPL_HEAD_BASE
+
+
+_STATUS_CHECK_TPL_BASE = r"""
 if [ -d {prjname_sq} ]; then
     echo ok
 else
     echo none
 fi
 """
-_INITIAL_SETUP_TPL = r"""
-set -eux
-export LC_ALL=C
-export DEBIAN_FRONTEND=noninteractive
-export DEBIAN_PRIORITY=critical
-export NEEDRESTART_MODE=a
-export {vervar_spec}
+_STATUS_CHECK_TPL = _COMMON_SHELL_TPL_HEAD + _STATUS_CHECK_TPL_BASE
 
+
+_INSTANCE_NAME_SH_BASE = r"""
+TOKEN="$(
+    curl -Ss --fail-with-body \
+        -X PUT "http://169.254.169.254/latest/api/token" \
+        -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"
+)"
+curl -Ss --fail-with-body \
+    -H "X-aws-ec2-metadata-token: $TOKEN" \
+    "http://169.254.169.254/latest/meta-data/tags/instance/Name"
+"""
+_INSTANCE_NAME_SH = _COMMON_SHELL_HEAD + _INSTANCE_NAME_SH_BASE
+
+
+_SET_HOSTNAME_TPL_BASE = r"""
 sudo hostnamectl set-hostname {target_hostname_sq}
+"""
+_SET_HOSTNAME_TPL = _COMMON_SHELL_HEAD + _SET_HOSTNAME_TPL_BASE
 
+
+_SET_UP_DOCKER_TPL_BASE = r"""
 sudo apt-get update -y
 sudo apt-get upgrade -y
 sudo apt-get install docker.io docker-compose python3-pip python3-requests -y
-sudo snap remove amazon-ssm-agent --purge
 
 sudo groupadd -f docker
 sudo usermod -aG docker "$(whoami)"
-sudo chmod 666 /var/run/docker.sock
 
 sudo systemctl enable docker.service
 sudo systemctl enable containerd.service
@@ -87,8 +109,15 @@ sudo systemctl daemon-reload
 sudo systemctl restart docker
 
 echo {docker_token_sq} | docker login --username {docker_username_sq} --password-stdin
+"""
+_SET_UP_DOCKER_TPL = _COMMON_SHELL_TPL_HEAD + _SET_UP_DOCKER_TPL_BASE
 
-curl -Ss https://my-netdata.io/kickstart.sh > /tmp/netdata-kickstart.sh
+
+_SET_UP_NETDATA_TPL_BASE = r"""
+curl -Ss --fail-with-body \
+    "https://my-netdata.io/kickstart.sh" \
+    -o /tmp/netdata-kickstart.sh
+
 sh -x /tmp/netdata-kickstart.sh \
     --claim-rooms {nd_claim_rooms_sq} \
     --claim-token {nd_claim_token_sq} \
@@ -96,13 +125,23 @@ sh -x /tmp/netdata-kickstart.sh \
 
 sudo cp /tmp/_netdata_config/* /etc/netdata/
 sudo systemctl restart netdata.service
+"""
+_SET_UP_NETDATA_TPL = _COMMON_SHELL_TPL_HEAD + _SET_UP_NETDATA_TPL_BASE
+
+
+_SET_UP_STUFF_TPL_BASE = r"""
+sudo snap remove amazon-ssm-agent --purge  # does not error-exit if it is not installed
+"""
+_SET_UP_STUFF_TPL = _COMMON_SHELL_TPL_HEAD + _SET_UP_STUFF_TPL_BASE
+
+
+_INITIAL_SETUP_FINALIZE_TPL_BASE = r"""
 mkdir -p {prjname_sq}
 """
-_MAIN_SETUP_TPL = r"""
-set -eux
-export LC_ALL=C
-export {vervar_spec}
+_INITIAL_SETUP_FINALIZE_TPL = _COMMON_SHELL_TPL_HEAD + _INITIAL_SETUP_FINALIZE_TPL_BASE
 
+
+_MAIN_SETUP_TPL_BASE = r"""
 cd {prjname_sq}
 docker pull {main_image_sq}
 docker-compose -f docker-compose.yaml -f deploy/docker-compose.prod.yaml pull --include-deps
@@ -112,6 +151,8 @@ docker-compose -f docker-compose.yaml -f deploy/docker-compose.prod.yaml up --no
 sleep 10
 docker ps
 """
+_MAIN_SETUP_TPL = _COMMON_SHELL_TPL_HEAD + _MAIN_SETUP_TPL_BASE
+
 
 TType = TypeVar("TType")
 
@@ -121,6 +162,10 @@ def ensure_type(value: Any, type_: type[TType]) -> TType:
     if not isinstance(value, type_):
         raise ValueError("Unexpected value type", dict(type_=type_, value=value))
     return value
+
+
+class NameTagError(Exception):
+    pass
 
 
 class DeployManager:
@@ -162,6 +207,14 @@ class DeployManager:
         return ensure_type(self._pyproj["tool"]["poetry"]["name"], str)
 
     @functools.cached_property
+    def _conf_relpath(self) -> str:
+        return f".config/midas/{self._prjname}/.env"
+
+    @functools.cached_property
+    def _prod_config_path(self) -> Path:
+        return Path.home() / f"{self._conf_relpath}.prod"
+
+    @functools.cached_property
     def _ssh_options(self) -> str:
         return (
             self._conf_value("DEPLOY_SSH_OPTIONS")
@@ -170,7 +223,7 @@ class DeployManager:
         )
 
     def _log(self, message: str) -> None:
-        sys.stderr.write(f"+ {message}\n")
+        sys.stderr.write(f"| {message}\n")
 
     def _sh(self, cmd: str, capture: bool = True, check: bool = True, **kwargs: Any) -> str:
         self._log(f"$ {cmd}")
@@ -179,6 +232,15 @@ class DeployManager:
 
     def _ssh(self, instance: str, cmd: str, capture: bool = True) -> str:
         return self._sh(f"ssh  {self._ssh_options}  {self._sq(instance)}  {self._sq(cmd)}", capture=capture)
+
+    def _ssh_check(self, instance: str, cmd: str) -> bool:
+        marker = "_MIDDEPLOY_SSH_CHECK_FLAG_"
+        # Note that this captures stdout but not stderr (by default).
+        res = self._ssh(instance, f"( {cmd}; ) || echo {self._sq(marker)}")
+        if marker in res:
+            return False
+        self._log(f"-> {res!r}")
+        return True
 
     def _rsync(
         self, instance: str, src: str = ".", dst: str | None = None, args: Iterable[str] = (), **kwargs: Any
@@ -221,9 +283,19 @@ class DeployManager:
             self._render_configs(path)
             yield Path(path)
 
+    def _hostname_from_name_tag(self, instance: str) -> str:
+        try:
+            name_tag = self._ssh(instance, _INSTANCE_NAME_SH)
+        except subprocess.CalledProcessError as exc:
+            raise NameTagError("cmd error", exc)
+        name_tag = name_tag.strip()
+        if "\n" in name_tag:
+            raise NameTagError("suspicious name_tag", name_tag)
+        prj = self._prjname
+        return f"{name_tag}.{prj}.midas-io.services"
+
     def _make_hostname(self, instance: str) -> str:
         hostname = instance.rsplit("@", 1)[-1]
-
         # Convert ec2 hostnames to something more readable.
         # e.g. "ec2-11-22-33-44.eu-central-1.compute.amazonaws.com"
         match = re.search(r"^ec2-([0-9-]+)\.(?:[^.]+).compute.amazonaws.com$", hostname)
@@ -233,30 +305,72 @@ class DeployManager:
         addr = match.group(1)  # e.g. "11-22-33-44"
         return f"{prj}-{addr}.{prj}.midas-io.services"
 
-    def _initial_setup(self, instance: str) -> None:
-        self._log(f"Setting up INITIAL {instance=!r}")
+    def _set_hostname(self, instance: str) -> None:
+        try:
+            hostname = self._hostname_from_name_tag(instance)
+        except NameTagError:
+            hostname = self._make_hostname(instance)
+        extra_tpl_vars = {"target_hostname_sq": self._sq(hostname)}
+        set_hostname_cmd = self._sh_tpl(_SET_HOSTNAME_TPL, extra_vars=extra_tpl_vars)
+        self._ssh(instance, set_hostname_cmd, capture=False)
 
-        conf_relpath = f".config/midas/{self._prjname}/.env"
-        prod_config_path = Path.home() / f"{conf_relpath}.prod"  # e.g. `~/.config/midas/someproj/.env.prod`
+    def _write_prod_config(self, instance: str, force_overwrite: bool = False) -> None:
+        conf_relpath = self._conf_relpath
+
+        prod_config_path = self._prod_config_path
         if not prod_config_path.is_file():
             raise ValueError(f"Initial setup requires prod config at {prod_config_path}")
 
-        docker_token = self._get_docker_token()
+        if not force_overwrite and self._ssh_check(instance, f"ls -l {self._sq(conf_relpath)}"):
+            return
 
-        hostname = self._make_hostname(instance)
+        self._rsync(instance, args=["--mkpath"], src=str(prod_config_path), dst=conf_relpath)  # `~/.config` file
+
+    def _set_up_docker(self, instance: str, force: bool = False) -> None:
+        if not force and self._ssh_check(instance, "docker ps"):
+            return
+
+        docker_token = self._get_docker_token()
         extra_tpl_vars = {
-            "target_hostname_sq": self._sq(hostname),
             "docker_username_sq": self._sq(self._conf_value("DOCKER_USERNAME") or "midasinvestments"),
             "docker_token_sq": self._sq(docker_token),
+        }
+        set_up_docker_cmd = self._sh_tpl(_SET_UP_DOCKER_TPL, extra_vars=extra_tpl_vars)
+        self._ssh(instance, set_up_docker_cmd, capture=False)
+
+    def _set_up_netdata(self, instance: str, force: bool = False) -> None:
+        if not force and self._ssh_check(instance, "ls /etc/netdata/netdata_python_custom_sender.py"):
+            return
+
+        extra_tpl_vars = {
             "nd_claim_rooms_sq": self._sq(self._pyproj["tool"]["deploy"]["netdata_claim_rooms"]),
             "nd_claim_token_sq": self._sq(self._pyproj["tool"]["deploy"]["netdata_claim_token"]),
         }
-        initial_setup_cmd = self._sh_tpl(_INITIAL_SETUP_TPL, extra_vars=extra_tpl_vars)
 
-        self._rsync(instance, args=["--mkpath"], src=str(prod_config_path), dst=conf_relpath)  # `~/.config` file
+        set_up_netdata_cmd = self._sh_tpl(_SET_UP_NETDATA_TPL, extra_vars=extra_tpl_vars)
         with self._config_files() as conffiles_path:
             self._rsync(instance, src=str(conffiles_path) + "/", dst="/tmp/_netdata_config")
-        self._ssh(instance, initial_setup_cmd, capture=False)
+        self._ssh(instance, set_up_netdata_cmd, capture=False)
+
+    def _set_up_stuff(self, instance: str) -> None:
+        set_up_stuff_cmd = self._sh_tpl(_SET_UP_STUFF_TPL)
+        self._ssh(instance, set_up_stuff_cmd, capture=False)
+
+    def _initial_setup_finalize(self, instance: str) -> None:
+        initial_setup_finalize_cmd = self._sh_tpl(_INITIAL_SETUP_FINALIZE_TPL)
+        self._ssh(instance, initial_setup_finalize_cmd, capture=False)
+
+    def _initial_setup(self, instance: str, force: bool = False, force_config: bool = False) -> None:
+        self._log(f"Setting up INITIAL {instance=!r}")
+
+        # Very much not idempotent, thus using a separate flag.
+        self._write_prod_config(instance, force_overwrite=force_config)
+
+        self._set_hostname(instance)
+        self._set_up_docker(instance, force=force)
+        self._set_up_netdata(instance, force=force)
+        self._set_up_stuff(instance)
+        self._initial_setup_finalize(instance)
 
     def _main_setup(self, instance: str) -> None:
         main_setup_cmd = self._sh_tpl(_MAIN_SETUP_TPL)
@@ -284,19 +398,27 @@ class DeployManager:
             self._initial_setup(instance)
         self._main_setup(instance)
 
+    def _main_prepare(self, image_tag: str = "latest") -> None:
+        self._sh_tpl_vars["prjname_sq"] = self._sq(self._prjname)
+
+        vervar = f"{self._prjname.upper()}_IMAGE_VERSION"  # e.g. SOMEPROJ_IMAGE_VERSION
+        self._sh_tpl_vars["vervar_spec"] = f"{vervar}={self._sq(image_tag)}"
+        self._sh_tpl_vars["main_image_sq"] = self._sq(f"investmentsteam/{self._prjname}:{image_tag}")
+
+    @functools.cached_property
+    def _instances(self) -> list[str]:
+        instances = self._conf_value("DEPLOY_TARGET_INSTANCES") or self._pyproj["tool"]["deploy"]["instances"]
+        return instances.split()
+
     def main(self) -> None:
         try:
             image_tag = sys.argv[1]
         except IndexError:
             image_tag = self._request_value("Image version (tag)")
 
-        instances = self._conf_value("DEPLOY_TARGET_INSTANCES") or self._pyproj["tool"]["deploy"]["instances"]
-        vervar = f"{self._prjname.upper()}_IMAGE_VERSION"  # e.g. SOMEPROJ_IMAGE_VERSION
-        self._sh_tpl_vars["prjname_sq"] = self._sq(self._prjname)
-        self._sh_tpl_vars["vervar_spec"] = f"{vervar}={self._sq(image_tag)}"
-        self._sh_tpl_vars["main_image_sq"] = self._sq(f"investmentsteam/{self._prjname}:{image_tag}")
+        self._main_prepare(image_tag=image_tag)
 
-        for instance in instances.split():
+        for instance in self._instances:
             self._process_instance(instance)
 
     @classmethod
