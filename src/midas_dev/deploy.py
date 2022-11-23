@@ -108,10 +108,12 @@ sudo systemctl enable containerd.service
 sudo systemctl daemon-reload
 sudo systemctl restart docker
 
-echo {docker_token_sq} | docker login --username {docker_username_sq} --password-stdin
 """
 _SET_UP_DOCKER_TPL = _COMMON_SHELL_TPL_HEAD + _SET_UP_DOCKER_TPL_BASE
-
+_DOCKER_AUTH_TPL_BASE = r"""
+echo {docker_token_sq} | docker login --username {docker_username_sq} --password-stdin
+"""
+_DOCKER_AUTH_TPL = _COMMON_SHELL_TPL_HEAD + _DOCKER_AUTH_TPL_BASE
 
 _SET_UP_NETDATA_TPL_BASE = r"""
 curl -Ss --fail-with-body \
@@ -337,6 +339,9 @@ class DeployManager:
         }
         set_up_docker_cmd = self._sh_tpl(_SET_UP_DOCKER_TPL, extra_vars=extra_tpl_vars)
         self._ssh(instance, set_up_docker_cmd, capture=False)
+        # After doing `usermod` (add group), need to re-login to be able to use docker.
+        docker_auth_cmd = self._sh_tpl(_DOCKER_AUTH_TPL, extra_vars=extra_tpl_vars)
+        self._ssh(instance, docker_auth_cmd, capture=False)
 
     def _set_up_netdata(self, instance: str, force: bool = False) -> None:
         if not force and self._ssh_check(instance, "ls /etc/netdata/netdata_python_custom_sender.py"):
