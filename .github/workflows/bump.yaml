@@ -22,6 +22,10 @@ jobs:
       # Apparently, git pushes from workflows don't trigger other workflows
       # (to prevent infinite recursion, at the very least)
       # so the publish has to be done within the same workflow as the version bump.
+      # And must not do checkout in it since it would checkout
+      # the original workflow-toggling commit, not the version-bump commit.
       - uses: ./.github/common_pypi
+        with:
+          DO_CHECKOUT: false
         env:
           PYPI_PASSWORD: "${{ secrets.PYPI_TOKEN }}"

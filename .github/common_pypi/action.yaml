@@ -1,3 +1,5 @@
+name: "common_pypi_action"
+
 # # Usage:
 # name: "Publish to pypi"
 # on:
@@ -12,8 +14,11 @@
 #         env:
 #           PYPI_PASSWORD: "${{ secrets.PYPI_TOKEN }}"
 
-name: "common_pypi_action"
 inputs:
+  DO_CHECKOUT:
+    type: boolean
+    default: true
+
   PYTHON_VERSION:
     type: string
     default: "3.10"
@@ -29,20 +34,19 @@ inputs:
   TWINE_EXTRA_ARGS:
     type: string
     default: "--verbose"
-  DO_CHECKOUT:
-    type: boolean
-    default: false
+
 runs:
   using: "composite"
   steps:
 
-  - if: "inputs.DO_CHECKOUT == true"
+  # Side sad boolean input note: https://github.com/actions/runner/issues/1483
+  - if: "inputs.DO_CHECKOUT == 'true'"
     uses: actions/checkout@v3
 
   # https://stackoverflow.com/a/59894223
   - name: "Exit if not on master branch"
     if: |
-      inputs.DO_CHECKOUT == true
+      inputs.DO_CHECKOUT == 'true'
       && github.event.base_ref != 'refs/heads/master'
       && github.event.base_ref != 'refs/heads/main'
     shell: bash
@@ -61,11 +65,11 @@ runs:
           exit 1
       fi
 
-  - name: Set up Python ${{ inputs.PYTHON_VERSION }}
+  - name: "Set up Python ${{ inputs.PYTHON_VERSION }}"
     id: setup-python
     uses: actions/setup-python@v4
     with:
-      python-version: ${{ inputs.PYTHON_VERSION }}
+      python-version: "${{ inputs.PYTHON_VERSION }}"
   - name: "Set up python dependencies"
     shell: bash
     run: |

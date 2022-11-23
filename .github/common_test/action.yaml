@@ -1,4 +1,5 @@
 name: "common_test_action"
+
 inputs:
   PYTHON_VERSION:
     type: string
@@ -12,27 +13,31 @@ inputs:
   PIP_VERSION_SPEC:
     type: string
     default: "<23"
+
 runs:
   using: "composite"
   steps:
+
   - uses: actions/checkout@v3
-  - name: Cache Poetry cache
+
+  - name: "Cache Poetry cache"
     uses: actions/cache@v3
     with:
       path: ~/.cache/pypoetry
       key: poetry-cache--${{ runner.os }}--${{ inputs.PYTHON_VERSION }}--${{ inputs.POETRY_VERSION }}
-  - name: Cache packages
+  - name: "Cache packages"
     id: cached-poetry-dependencies
     uses: actions/cache@v3
     with:
       path: ~/.local
       key: poetry--${{ runner.os }}--${{ inputs.PYTHON_VERSION }}--${{ hashFiles('**/poetry.lock') }}--${{ hashFiles('.github/workflows/test.yaml') }}
-  - name: Set up Python ${{ inputs.PYTHON_VERSION }}
+
+  - name: "Set up Python ${{ inputs.PYTHON_VERSION }}"
     id: setup-python
     uses: actions/setup-python@v4
     with:
-      python-version: ${{ inputs.PYTHON_VERSION }}
-  - name: Install Poetry
+      python-version: "${{ inputs.PYTHON_VERSION }}"
+  - name: "Install Poetry"
     shell: bash
     run: |
       set -eu
@@ -47,6 +52,7 @@ runs:
       if [ -d ./deploy/ssh ]; then cp ./deploy/ssh/* ~/.ssh/ && chmod 600 ~/.ssh/id_*; fi
       poetry install --no-interaction --sync
       poetry run pip install -U "pip${{ inputs.PIP_VERSION_SPEC }}"
+
   - name: Run checks
     env:
       RUN_ENV: tests
@@ -56,4 +62,4 @@ runs:
       poetry run poetry check
       poetry run pip check
       poetry run midtest --check
-      # if [ -f ".pre-commit-config.yaml" ]; then pre-commit run; fi
+      # TODO: `if [ -f ".pre-commit-config.yaml" ]; then pre-commit run; fi`
