@@ -1,6 +1,9 @@
-name: "common_bump_action"
+name: "common_protected_bump_action"
 
 inputs:
+  AUTOBUMP_URL:
+    type: string
+
   # Which code paths to check for changes (space-separated).
   CODE_PATHS:
     type: string
@@ -8,13 +11,6 @@ inputs:
   RELEASE_TYPE:
     type: string
     default: "minor"
-
-  GIT_USER_NAME:
-    type: string
-    default: "midas-dev"
-  GIT_USER_EMAIL:
-    type: string
-    default: "apps@midas.investments"
 
   PYTHON_VERSION:
     type: string
@@ -50,6 +46,8 @@ runs:
 
   - name: "Release"
     shell: bash
+    # Reminder: validate the complicated scripts in actions using
+    #     cat .github/common_bump_protected/action.yaml | yq -r '.runs.steps[-1].run' | sed -r 's/\$\{\{[^\}]+\}\}/SOMEVALUE/g' | shellcheck --shell=bash -
     run: |
       set -Eeuo pipefail
       set -x
@@ -60,7 +58,8 @@ runs:
           exit 1
       fi
 
-      # Makes it possible to avoid version bump on non-code changes:
+      # Check to ensure there's no infinite bump recursion.
+      # Also makes it possible to avoid version bump on non-code changes.
       LAST_VER="$(poetry version --short)"
       changes="$(git diff --stat "refs/tags/v${LAST_VER}" ${{ inputs.CODE_PATHS }})"
       if [ -z "$changes" ]; then
@@ -68,13 +67,13 @@ runs:
           exit 0
       fi
 
-      poetry version "${{ inputs.RELEASE_TYPE }}"
-      NEW_VER="$(poetry version --short)"
-
-      git config user.name "${{ inputs.GIT_USER_NAME }}"
-      git config user.email "${{ inputs.GIT_USER_EMAIL }}"
-
-      git commit -am "Release ${NEW_VER}"
-      git tag "v${NEW_VER}"
-      git push
-      git push --tags
+      repo="$(git remote get-url origin)"
+      # These actions should already use the https URL,
+      # but for copypasteability, normalize it:
+      repo="$(printf "%s" "$repo" | sed -r 's|^git@github.com:|https://github.com/|')"
+      # The code behind the API:
+      # 1. checks that URL is `https://github.com/Private-Crypto-Trading-Fund/…`,
+      # 2. does `git clone` on it with a HTTP-basic-auth secret,
+      # 3. `toml`-parses the `pyproject.toml`, updates it,
+      # 4. git pushes.
+      curl --fail -v -X POST "${{ inputs.AUTOBUMP_URL }}?release_type=${{ inputs.RELEASE_TYPE }}&url=${repo}"
