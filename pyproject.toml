@@ -51,6 +51,8 @@ django-split-settings = {version = "^1.2.0", optional = true}
 poetryup = "^0.12.3"
 flake8-mock-x2 = "^0.4.1"
 coloredlogs = "^15.0.1"
+ipdb = "^0.13.9"
+pre-commit = "^2.20.0"
 
 [tool.poetry.extras]
 django = [
