@@ -365,6 +365,10 @@ class DeployManager:
         initial_setup_finalize_cmd = self._sh_tpl(_INITIAL_SETUP_FINALIZE_TPL)
         self._ssh(instance, initial_setup_finalize_cmd, capture=False)
 
+    def _initial_setup_reset(self, instance: str) -> None:
+        reset_cmd = self._sh_tpl(r"rm -rf {prjname_sq}.reset && mv {prjname_sq} {prjname_sq}.reset")
+        self._ssh(instance, reset_cmd, capture=False)
+
     def _initial_setup(self, instance: str, force: bool = False, force_config: bool = False) -> None:
         self._log(f"Setting up INITIAL {instance=!r}")
 
@@ -394,11 +398,36 @@ class DeployManager:
         )
         self._ssh(instance, main_setup_cmd, capture=False)
 
-    def _process_instance(self, instance: str) -> None:
+    def _process_instance(self, instance: str, cmd: str | None = None) -> None:
         self._log(f"Setting up {instance=!r}")
         status = self._ssh(instance, self._sh_tpl(_STATUS_CHECK_TPL))
         if status not in ("ok", "none"):
             raise ValueError(f"Unexpected status check result {status!r}")
+
+        if cmd is not None:
+            cmd_force = True
+            if cmd == "initial_setup":
+                self._initial_setup(instance)
+            elif cmd == "write_prod_config":
+                self._write_prod_config(instance, force_overwrite=cmd_force)
+            elif cmd == "set_hostname":
+                self._set_hostname(instance)
+            elif cmd == "set_up_docker":
+                self._set_up_docker(instance, force=cmd_force)
+            elif cmd == "set_up_netdata":
+                self._set_up_netdata(instance, force=cmd_force)
+            elif cmd == "set_up_stuff":
+                self._set_up_stuff(instance)
+            elif cmd == "initial_setup_reset":
+                self._initial_setup_finalize(instance)
+            elif cmd == "initial_setup_finalize":
+                self._initial_setup_finalize(instance)
+            elif cmd == "main_setup":
+                self._main_setup(instance)
+            else:
+                raise ValueError(f"Unknown {cmd=!r}")
+            return
+
         if status == "none":
             self._initial_setup(instance)
         self._main_setup(instance)
@@ -416,15 +445,20 @@ class DeployManager:
         return instances.split()
 
     def main(self) -> None:
+        # TODO: some `click` cmd or something.
         try:
             image_tag = sys.argv[1]
         except IndexError:
             image_tag = self._request_value("Image version (tag)")
 
+        cmd = None
+        if len(sys.argv) > 2:
+            cmd = sys.argv[2]
+
         self._main_prepare(image_tag=image_tag)
 
         for instance in self._instances:
-            self._process_instance(instance)
+            self._process_instance(instance, cmd=cmd)
 
     @classmethod
     def run_cli(cls) -> None:
