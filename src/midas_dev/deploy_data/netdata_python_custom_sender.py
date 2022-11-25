@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import annotations
 
 # https://learn.netdata.cloud/docs/agent/health/notifications/custom
 import sys
