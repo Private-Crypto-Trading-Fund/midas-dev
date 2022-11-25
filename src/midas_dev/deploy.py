@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import contextlib
 import functools
 import os
@@ -244,11 +246,7 @@ class DeployManager:
         self._log(f"-> {res!r}")
         return True
 
-    def _rsync(
-        self, instance: str, src: str = ".", dst: str | None = None, args: Iterable[str] = (), **kwargs: Any
-    ) -> None:
-        if not dst:
-            dst = f"{self._prjname}/"
+    def _rsync_any(self, src: str, dst: str, args: Iterable[str] = (), capture: bool = False, **kwargs: Any) -> str:
         cmd_pieces = [
             "rsync",
             f"--rsh=ssh {self._ssh_options}",
@@ -256,10 +254,17 @@ class DeployManager:
             "--recursive",
             *args,
             src,
-            f"{instance}:{dst}",
+            dst,
         ]
         cmd = self._sh_join(cmd_pieces)
-        self._sh(cmd, capture=False, **kwargs)
+        return self._sh(cmd, capture=capture, **kwargs)
+
+    def _rsync(
+        self, instance: str, src: str = ".", dst: str | None = None, args: Iterable[str] = (), **kwargs: Any
+    ) -> str:
+        if not dst:
+            dst = f"{self._prjname}/"
+        return self._rsync_any(src=src, dst=f"{instance}:{dst}")
 
     def _sh_tpl(self, tpl: str, extra_vars: dict[str, str] | None = None) -> str:
         return tpl.format(**self._sh_tpl_vars, **(extra_vars or {}))
@@ -315,6 +320,14 @@ class DeployManager:
         extra_tpl_vars = {"target_hostname_sq": self._sq(hostname)}
         set_hostname_cmd = self._sh_tpl(_SET_HOSTNAME_TPL, extra_vars=extra_tpl_vars)
         self._ssh(instance, set_hostname_cmd, capture=False)
+
+    def _pull_prod_config(self, instance: str, force_overwrite: bool = False) -> None:
+        conf_relpath = self._conf_relpath
+        prod_config_path = self._prod_config_path
+        if prod_config_path.is_file() and not force_overwrite:
+            raise ValueError(f"Already exists ({force_overwrite=!r}): {prod_config_path!r}")
+
+        self._rsync_any(src=f"{instance}:{conf_relpath}", dst=str(prod_config_path))
 
     def _write_prod_config(self, instance: str, force_overwrite: bool = False) -> None:
         conf_relpath = self._conf_relpath
@@ -408,6 +421,8 @@ class DeployManager:
             cmd_force = True
             if cmd == "initial_setup":
                 self._initial_setup(instance)
+            elif cmd == "pull_prod_config":
+                self._pull_prod_config(instance, force_overwrite=cmd_force)
             elif cmd == "write_prod_config":
                 self._write_prod_config(instance, force_overwrite=cmd_force)
             elif cmd == "set_hostname":
