@@ -36,16 +36,16 @@ pytest-deadfixtures = "^2.2.1"
 pytest-env = "^0.8.1"
 pytest-timeout = "^2.1.0"
 python = "^3.10"
-autoflake = "^1.7.7"
+autoflake = "^1.7.8"
 toml = "^0.10.2"
-django-extra-checks = {version = "^0.13.0", optional = true}
+django-extra-checks = {version = "^0.13.3", optional = true}
 django-test-migrations = {version = "^1.2.0", optional = true}
 django-debug-toolbar = {version = "^3.7.0", optional = true}
 django-querycount = {version = "^0.7.0", optional = true}
 django-migration-linter = {version = "^4.1.0", optional = true}
 flake8-django = {version = "^1.1.5", optional = true}
 pytest-django = {version = "^4.5.2", optional = true}
-django-coverage-plugin = {version = "^2.0.3", optional = true}
+django-coverage-plugin = {version = "^2.0.4", optional = true}
 django-stubs-ext = {version = "^0.5.0", optional = true}
 django-split-settings = {version = "^1.2.0", optional = true}
 poetryup = "^0.12.5"
