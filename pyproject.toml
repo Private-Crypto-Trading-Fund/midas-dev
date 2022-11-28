@@ -26,29 +26,29 @@ flake8-print = "^5.0.0"
 flake8-pytest-style = "^1.6.0"
 flake8-use-fstring = "^1.4"
 isort = "^5.10.1"
-mypy = "^0.990"
+mypy = "^0.991"
 poetry = "^1.2.2"
 pytest = "^7.2.0"
-pytest-asyncio = "^0.20.1"
+pytest-asyncio = "^0.20.2"
 pytest-blockage = "^0.2.4"
 pytest-cov = "^4.0.0"
 pytest-deadfixtures = "^2.2.1"
 pytest-env = "^0.8.1"
 pytest-timeout = "^2.1.0"
 python = "^3.10"
-autoflake = "^1.7.7"
+autoflake = "^1.7.8"
 toml = "^0.10.2"
-django-extra-checks = {version = "^0.13.0", optional = true}
+django-extra-checks = {version = "^0.13.3", optional = true}
 django-test-migrations = {version = "^1.2.0", optional = true}
 django-debug-toolbar = {version = "^3.7.0", optional = true}
 django-querycount = {version = "^0.7.0", optional = true}
 django-migration-linter = {version = "^4.1.0", optional = true}
 flake8-django = {version = "^1.1.5", optional = true}
 pytest-django = {version = "^4.5.2", optional = true}
-django-coverage-plugin = {version = "^2.0.3", optional = true}
+django-coverage-plugin = {version = "^2.0.4", optional = true}
 django-stubs-ext = {version = "^0.5.0", optional = true}
 django-split-settings = {version = "^1.2.0", optional = true}
-poetryup = "^0.12.3"
+poetryup = "^0.12.5"
 flake8-mock-x2 = "^0.4.1"
 coloredlogs = "^15.0.1"
 ipdb = "^0.13.9"
@@ -69,8 +69,8 @@ django = [
 ]
 
 [tool.poetry.group.dev.dependencies]
-types-toml = "^0.10.8"
-types-requests = "^2.28.11.4"
+types-toml = "^0.10.8.1"
+types-requests = "^2.28.11.5"
 
 [build-system]
 requires = ["poetry-core>=1.1.0"]
