@@ -32,6 +32,21 @@ Testing usage: deploy on a specified single host:
     DEPLOY_SSH_OPTIONS="-l ubuntu" \
     poetry run middeploy latest
 
+Run one of the main or extra steps independently:
+
+    poetry run middeploy - initial_setup
+    poetry run middeploy - pull_prod_config
+    poetry run middeploy - write_prod_config
+    poetry run middeploy - set_hostname
+    poetry run middeploy - set_up_docker
+    poetry run middeploy - set_up_netdata
+    poetry run middeploy - set_up_stuff
+    poetry run middeploy - initial_setup_reset
+    poetry run middeploy - initial_setup_finalize
+    poetry run middeploy latest main_setup
+
+WARNING: the CLI format of this is subject to change.
+
 Introduction to a new project:
 
   * Configure `pyproject.toml` `[tool.deploy]`:
@@ -45,6 +60,7 @@ Introduction to a new project:
     * `./deploy/docker-compose.prod.yaml` should specify the production configuration overrides
       (on top of `./docker-compose.yaml`).
       It *must* use `${PROJECT_NAME}_IMAGE_VERSION` env variable for the app images.
+      It *must* use `env_file: "$HOME/.config/midas/{projectname}/.env"`.
   * Configure own environment:
     * Docker token into `~/.config/midas/docker_token`
     * Produciton config into `~/.config/midas/${project_name}/.env`
@@ -264,7 +280,7 @@ class DeployManager:
     ) -> str:
         if not dst:
             dst = f"{self._prjname}/"
-        return self._rsync_any(src=src, dst=f"{instance}:{dst}")
+        return self._rsync_any(src=src, dst=f"{instance}:{dst}", args=args)
 
     def _sh_tpl(self, tpl: str, extra_vars: dict[str, str] | None = None) -> str:
         return tpl.format(**self._sh_tpl_vars, **(extra_vars or {}))
@@ -327,7 +343,7 @@ class DeployManager:
         if prod_config_path.is_file() and not force_overwrite:
             raise ValueError(f"Already exists ({force_overwrite=!r}): {prod_config_path!r}")
 
-        self._rsync_any(src=f"{instance}:{conf_relpath}", dst=str(prod_config_path))
+        self._rsync_any(src=f"{instance}:{conf_relpath}", dst=str(prod_config_path), args=["--delete-after"])
 
     def _write_prod_config(self, instance: str, force_overwrite: bool = False) -> None:
         conf_relpath = self._conf_relpath
@@ -367,7 +383,7 @@ class DeployManager:
 
         set_up_netdata_cmd = self._sh_tpl(_SET_UP_NETDATA_TPL, extra_vars=extra_tpl_vars)
         with self._config_files() as conffiles_path:
-            self._rsync(instance, src=str(conffiles_path) + "/", dst="/tmp/_netdata_config")
+            self._rsync(instance, src=str(conffiles_path) + "/", dst="/tmp/_netdata_config", args=["--delete-after"])
         self._ssh(instance, set_up_netdata_cmd, capture=False)
 
     def _set_up_stuff(self, instance: str) -> None:
@@ -407,6 +423,7 @@ class DeployManager:
                 "--include=deploy/Caddyfile",
                 "--exclude=*",
                 "--prune-empty-dirs",
+                "--delete-after",
             ],
         )
         self._ssh(instance, main_setup_cmd, capture=False)
