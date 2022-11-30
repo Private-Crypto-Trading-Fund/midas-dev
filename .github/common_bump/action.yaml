@@ -4,7 +4,7 @@ inputs:
   # Which code paths to check for changes (space-separated).
   CODE_PATHS:
     type: string
-    default: "./src/"
+    default: "./src/ poetry.lock"
   RELEASE_TYPE:
     type: string
     default: "minor"
