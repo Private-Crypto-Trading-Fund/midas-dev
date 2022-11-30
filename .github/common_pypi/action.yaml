@@ -50,15 +50,20 @@ runs:
   - name: "Exit if not on master branch"
     if: |
       inputs.DO_CHECKOUT == 'true'
-      && github.event.base_ref != 'refs/heads/${{ inputs.EXPECTED_BRANCH }}'
+      && github.event.base_ref != format('refs/heads/{0}', inputs.EXPECTED_BRANCH)
     shell: bash
+    env:
+      BASE_REF: "${{ github.event.base_ref }}"
+      EXPECTED_BRANCH: "${{ inputs.EXPECTED_BRANCH }}"
     run: |
+      # Failing the EXPECTED_BRANCH check.
       set -Eeuo pipefail
-      echo "github.event.base_ref = '${{ github.event.base_ref }}' != 'refs/heads/${{ inputs.EXPECTED_BRANCH }}'"
-      exit -1
+      echo "github.event.base_ref = '${BASE_REF}' != 'refs/heads/${EXPECTED_BRANCH}'"
+      exit 254
   - name: "Exit if not on a version tag"
     shell: bash
     run: |
+      # Version tag check
       set -Eeuo pipefail
       set -x
       CURRENT_TAG="$(git describe --exact-match --tags HEAD)"  # fails if HEAD has no tag
@@ -74,21 +79,24 @@ runs:
       python-version: "${{ inputs.PYTHON_VERSION }}"
   - name: "Set up python dependencies"
     shell: bash
+    env:
+      PIP_VERSION_SPEC: "${{ inputs.PIP_VERSION_SPEC }}"
     run: |
       set -Eeuo pipefail
       set -x
-      pip install --upgrade "pip${{ inputs.PIP_VERSION_SPEC }}"
+      pip install --upgrade "pip${PIP_VERSION_SPEC}"
       pip install --upgrade "build~=0.9.0" "twine~=4.0.1" "wheel~=0.38.4"
 
   - name: Publish
     shell: bash
     env:
+      TWINE_USERNAME: "${{ inputs.PYPI_USER }}"
       TWINE_PASSWORD: "${{ env.PYPI_PASSWORD }}"
+      TWINE_REPOSITORY_URL: "${{ inputs.PYPI_REPOSITORY }}"
+      TWINE_EXTRA_ARGS: "${{ inputs.TWINE_EXTRA_ARGS }}"
     run: |
       set -Eeuo pipefail
       set -x
 
       python -m build
-      TWINE_USERNAME="${{ inputs.PYPI_USER }}" \
-      TWINE_REPOSITORY_URL="${{ inputs.PYPI_REPOSITORY }}" \
-      twine upload ${{ inputs.TWINE_EXTRA_ARGS }} dist/*
+      twine upload $TWINE_EXTRA_ARGS dist/*
