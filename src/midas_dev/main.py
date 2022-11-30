@@ -1,73 +1,23 @@
 from __future__ import annotations
 
-import configparser
 import contextlib
-import io
 import shlex
 import subprocess
 import sys
-from collections.abc import Generator, Iterable, Mapping, Sequence
+from collections.abc import Collection, Generator, Sequence
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, ClassVar
 
 import click
 import toml
+
+from .utils import TCfg, deep_merge, dumps_configparser, getitem_path, pair_window
 
 HERE = Path(__file__).parent
 MAIN_CONFIG = toml.loads((HERE / "common_pyproject.toml").read_text())
 
 
-def deep_update(target: dict[Any, Any], updates: Mapping[Any, Any]) -> dict[Any, Any]:
-    """
-    >>> target = dict(a=1, b=dict(c=2, d=dict(e="f", g="h"), i=dict(j="k")))
-    >>> updates = dict(i="i", j="j", b=dict(c=dict(c2="c2"), d=dict(e="f2")))
-    >>> deep_update(target, updates)
-    {'a': 1, 'b': {'c': {'c2': 'c2'}, 'd': {'e': 'f2', 'g': 'h'}, 'i': {'j': 'k'}}, 'i': 'i', 'j': 'j'}
-    """
-    target = target.copy()
-    for key, value in updates.items():
-        old_value = target.get(key)
-        if isinstance(old_value, dict):
-            new_value = deep_update(old_value, value)
-        else:
-            new_value = value
-        target[key] = new_value
-    return target
-
-
-TVal = TypeVar("TVal")
-
-
-def pair_window(iterable: Iterable[TVal]) -> Iterable[tuple[TVal, TVal]]:
-    """
-    >>> list(pair_window([11, 22, 33, 44]))
-    [(11, 22), (22, 33), (33, 44)]
-    """
-    iterable = iter(iterable)
-    try:
-        prev_value = next(iterable)
-    except StopIteration:
-        return
-    for item in iterable:
-        yield prev_value, item
-        prev_value = item
-
-
-def dumps_configparser(data: dict[Any, Any]) -> str:
-    """Write a `configparser` ("ini") format file"""
-    config_obj = configparser.ConfigParser()
-    for section_name, section_cfg in data.items():
-        config_obj[section_name] = {
-            key: ", ".join(val) if isinstance(val, list) else val
-            for key, val in section_cfg.items()
-            if not isinstance(val, dict)
-        }
-    fobj = io.StringIO()
-    config_obj.write(fobj)
-    return fobj.getvalue()
-
-
-def read_local_config(local_path: str | Path = "pyproject.toml") -> dict[str, Any]:
+def read_local_config(local_path: str | Path = "pyproject.toml") -> TCfg:
     return toml.loads(Path(local_path).read_text())
 
 
@@ -84,6 +34,11 @@ class CommonCLITool(CLIToolBase):
     tool_name: str
     should_add_default_path: bool = False
     ignored_args: frozenset[str] = frozenset(["--check"])
+    concatenate_disable_suffix: ClassVar[str] = "__replace"
+    concatenated_list_paths: ClassVar[Collection[Sequence[str]]] = (
+        # Makes it possible to add more opts to addopts.
+        ("tool", "pytest", "ini_options", "addopts"),
+    )
 
     def run_cmd(self, cmd: Sequence[str]) -> None:
         cmd_s = shlex.join(cmd)
@@ -109,13 +64,48 @@ class CommonCLITool(CLIToolBase):
             return True
         return False
 
-    @staticmethod
+    @classmethod
+    def merge_configs(cls, common_config: TCfg, local_config: TCfg) -> TCfg:
+        result = deep_merge(common_config, local_config)
+
+        # Merge some lists explicitly (unless disabled).
+        # Note: expecting all `concatenated_list_paths` paths to exist
+        # in the common config (and, thus, in the merged config).
+        for concat_path in cls.concatenated_list_paths:
+            assert concat_path, "must be non-empty"
+            parent_path = concat_path[:-1]
+            key = concat_path[-1]
+            skip_marker_key = f"{key}{cls.concatenate_disable_suffix}"
+
+            common_value = getitem_path(common_config, concat_path)
+            assert isinstance(common_value, list), f"path {concat_path} must point to a list"
+
+            parent = getitem_path(result, parent_path)
+            assert isinstance(parent, dict), f"path {parent_path} must point to a dict"
+            if skip_marker_key in parent:
+                assert parent[skip_marker_key] is True or parent[skip_marker_key] is False
+                parent.pop(skip_marker_key)
+                continue
+
+            try:
+                local_value = getitem_path(local_config, concat_path)
+            except KeyError:
+                # No local value, nothing to do.
+                continue
+
+            assert isinstance(local_value, list), f"path {concat_path} can only be overridden by a list"
+            parent[key] = [*common_value, *local_value]
+
+        return result
+
+    @classmethod
     def read_merged_config(
+        cls,
         local_path: str | Path = "pyproject.toml",
-        common_config: dict[str, Any] = MAIN_CONFIG,
-    ) -> dict[str, Any]:
+        common_config: TCfg = MAIN_CONFIG,
+    ) -> TCfg:
         local_config = read_local_config()
-        return deep_update(common_config, local_config)
+        return cls.merge_configs(common_config, local_config)
 
     def add_default_path(self, extra_args: Sequence[str], path: str = ".") -> Sequence[str]:
         # A very approximate heuristic: do not add path if any non-flags are present.
