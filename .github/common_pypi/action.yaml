@@ -18,6 +18,9 @@ inputs:
   DO_CHECKOUT:
     type: boolean
     default: true
+  EXPECTED_BRANCH:
+    type: string
+    default: "master"
 
   PYTHON_VERSION:
     type: string
@@ -47,12 +50,11 @@ runs:
   - name: "Exit if not on master branch"
     if: |
       inputs.DO_CHECKOUT == 'true'
-      && github.event.base_ref != 'refs/heads/master'
-      && github.event.base_ref != 'refs/heads/main'
+      && github.event.base_ref != 'refs/heads/${{ inputs.EXPECTED_BRANCH }}'
     shell: bash
     run: |
       set -Eeuo pipefail
-      echo "github.event.base_ref = ${{ github.event.base_ref }} != refs/heads/master"
+      echo "github.event.base_ref = '${{ github.event.base_ref }}' != 'refs/heads/${{ inputs.EXPECTED_BRANCH }}'"
       exit -1
   - name: "Exit if not on a version tag"
     shell: bash
