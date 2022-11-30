@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - master
-      - main
 
 concurrency:
   group: bump-${{ github.head_ref || github.run_id }}
@@ -18,7 +17,7 @@ jobs:
       - uses: actions/checkout@v3  # For `./.github/` to exist.
       - uses: ./.github/common_bump
         with:
-          CODE_PATHS: "./"  # Bump on all changes, not just `src`
+          CODE_PATHS: "./"  # Bump on all changes, not just `src` / versions.
       # Apparently, git pushes from workflows don't trigger other workflows
       # (to prevent infinite recursion, at the very least)
       # so the publish has to be done within the same workflow as the version bump.
