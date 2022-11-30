@@ -64,7 +64,7 @@ runs:
       # Check to ensure there's no infinite bump recursion.
       # Also makes it possible to avoid version bump on non-code changes.
       LAST_VER="$(poetry version --short)"
-      changes="$(git diff --stat "refs/tags/v${LAST_VER}" ${{ inputs.CODE_PATHS }})"
+      changes="$(git diff --stat "refs/tags/v${LAST_VER}" -- ${{ inputs.CODE_PATHS }})"
       if [ -z "$changes" ]; then
           echo "No changes since 'v${LAST_VER}' in ${{ inputs.CODE_PATHS }}"
           exit 0
