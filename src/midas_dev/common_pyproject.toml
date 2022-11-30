@@ -44,6 +44,8 @@ addopts = [
   "--cov-branch",
   "--cov-report=term-missing:skip-covered",
   "--cov-report=html",
+  "--cov=src",
+  "--cov=tests",
 ]
 env = [
   "RUN_ENV=tests",
