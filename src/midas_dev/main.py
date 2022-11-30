@@ -84,11 +84,17 @@ class CommonCLITool(CLIToolBase):
             assert isinstance(parent, dict), f"path {parent_path} must point to a dict"
             if skip_marker_key in parent:
                 assert parent[skip_marker_key] is True or parent[skip_marker_key] is False
+                parent.pop(skip_marker_key)
                 continue
 
-            value = parent[key]
-            assert isinstance(value, list), f"path {concat_path} can only be overridden by a list"
-            parent[key] = [*common_value, *value]
+            try:
+                local_value = getitem_path(local_config, concat_path)
+            except KeyError:
+                # No local value, nothing to do.
+                continue
+
+            assert isinstance(local_value, list), f"path {concat_path} can only be overridden by a list"
+            parent[key] = [*common_value, *local_value]
 
         return result
 

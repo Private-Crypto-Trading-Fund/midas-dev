@@ -12,6 +12,7 @@ from typing import TypeVar, cast
 TCfgScalar = int | float | bool | str | datetime.date | datetime.datetime  # `toml` scalars
 # Note: section can be a scalar, e.g. `toml.loads("x=1") == {"x": 1}`
 TCfgSection = dict[str, "TCfgSection"] | list["TCfgSection"] | TCfgScalar
+# Tehnically, any `TCfg` is also a `TCfgSection`, but mypy doesn't catch on that.
 TCfg = dict[str, TCfgSection]
 TVal = TypeVar("TVal")
 
