@@ -79,4 +79,4 @@ runs:
       # 2. does `git clone` on it with a HTTP-basic-auth secret,
       # 3. `toml`-parses the `pyproject.toml`, updates it,
       # 4. git pushes.
-      curl --fail -v -X POST "${{ inputs.AUTOBUMP_URL }}?release_type=${{ inputs.RELEASE_TYPE }}&url=${repo}"
+      curl --fail -v -X POST "${{ inputs.AUTOBUMP_URL }}?branch=${{ inputs.EXPECTED_BRANCH }}&release_type=${{ inputs.RELEASE_TYPE }}&url=${repo}"
