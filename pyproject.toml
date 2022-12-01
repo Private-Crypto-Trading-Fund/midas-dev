@@ -5,6 +5,7 @@ description = ""
 authors = ["Anton V <anton.vasilyev@midas.investments>"]
 
 [tool.poetry.scripts]
+midautoflake = "midas_dev.main:Autoflake.run_cli"
 midblack = "midas_dev.main:Black.run_cli"
 middeploy = "midas_dev.deploy:DeployManager.run_cli"
 midflake8 = "midas_dev.main:Flake8.run_cli"
