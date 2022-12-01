@@ -67,4 +67,6 @@ runs:
       poetry run poetry check
       poetry run pip check
       poetry run midtest --check
-      # TODO: `if [ -f ".pre-commit-config.yaml" ]; then pre-commit run; fi`
+      if [ -f "./.pre-commit-config.yaml" ]; then
+          PRE_COMMIT_SKIP_MIDAS_DEV=1 pre-commit run --all-files
+      fi
