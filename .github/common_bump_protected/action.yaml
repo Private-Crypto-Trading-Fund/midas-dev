@@ -8,12 +8,12 @@ inputs:
   CODE_PATHS:
     type: string
     default: "./src/ ./poetry.lock"
-  RELEASE_TYPE:
-    type: string
-    default: "minor"
   EXPECTED_BRANCH:
     type: string
     default: "master"
+  RELEASE_TYPE:
+    type: string
+    default: "minor"
 
   PYTHON_VERSION:
     type: string
@@ -37,9 +37,12 @@ runs:
       python-version: "${{ inputs.PYTHON_VERSION }}"
   - name: "Install Poetry"
     shell: bash
+    env:
+      POETRY_URL: "${{ inputs.POETRY_URL }}"
+      POETRY_VERSION: "${{ inputs.POETRY_VERSION }}"
     run: |
       set -eu
-      curl -sSL "${{ inputs.POETRY_URL }}" | python - --version "${{ inputs.POETRY_VERSION }}"
+      curl -Ss --fail --location "${POETRY_URL}" | python - --version "${POETRY_VERSION}"
       echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
   - uses: actions/checkout@v3
@@ -49,24 +52,27 @@ runs:
 
   - name: "Release"
     shell: bash
-    # Reminder: validate the complicated scripts in actions using
-    #     cat .github/common_bump_protected/action.yaml | yq -r '.runs.steps[-1].run' | sed -r 's/\$\{\{[^\}]+\}\}/SOMEVALUE/g' | shellcheck --shell=bash -
+    env:
+      AUTOBUMP_URL: "${{ inputs.AUTOBUMP_URL }}"
+      CODE_PATHS: "${{ inputs.CODE_PATHS }}"
+      EXPECTED_BRANCH: "${{ inputs.EXPECTED_BRANCH }}"
+      RELEASE_TYPE: "${{ inputs.RELEASE_TYPE }}"
     run: |
       set -Eeuo pipefail
       set -x
 
       branch="$(git branch --show-current)"
-      if [ "$branch" != "${{ inputs.EXPECTED_BRANCH }}" ]; then
-          echo "Unexpected branch='${branch}' != '${{ inputs.EXPECTED_BRANCH }}'" >&2
+      if [ "$branch" != "$EXPECTED_BRANCH" ]; then
+          echo "Unexpected branch='${branch}' != '${EXPECTED_BRANCH}'" >&2
           exit 1
       fi
 
       # Check to ensure there's no infinite bump recursion.
       # Also makes it possible to avoid version bump on non-code changes.
       LAST_VER="$(poetry version --short)"
-      changes="$(git diff --stat "refs/tags/v${LAST_VER}" -- ${{ inputs.CODE_PATHS }})"
+      changes="$(git diff --stat "refs/tags/v${LAST_VER}" -- $CODE_PATHS)"
       if [ -z "$changes" ]; then
-          echo "No changes since 'v${LAST_VER}' in ${{ inputs.CODE_PATHS }}"
+          echo "No changes since 'v${LAST_VER}' in '${CODE_PATHS}'"
           exit 0
       fi
 
@@ -79,4 +85,4 @@ runs:
       # 2. does `git clone` on it with a HTTP-basic-auth secret,
       # 3. `toml`-parses the `pyproject.toml`, updates it,
       # 4. git pushes.
-      curl --fail -v -X POST "${{ inputs.AUTOBUMP_URL }}?release_type=${{ inputs.RELEASE_TYPE }}&url=${repo}"
+      curl --fail -v -X POST "${AUTOBUMP_URL}?branch=${EXPECTED_BRANCH}&release_type=${RELEASE_TYPE}&url=${repo}"

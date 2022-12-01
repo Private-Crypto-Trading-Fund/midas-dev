@@ -5,12 +5,12 @@ inputs:
   CODE_PATHS:
     type: string
     default: "./src/ ./poetry.lock"
-  RELEASE_TYPE:
-    type: string
-    default: "minor"
   EXPECTED_BRANCH:
     type: string
     default: "master"
+  RELEASE_TYPE:
+    type: string
+    default: "minor"
 
   GIT_USER_NAME:
     type: string
@@ -41,9 +41,12 @@ runs:
       python-version: "${{ inputs.PYTHON_VERSION }}"
   - name: "Install Poetry"
     shell: bash
+    env:
+      POETRY_URL: "${{ inputs.POETRY_URL }}"
+      POETRY_VERSION: "${{ inputs.POETRY_VERSION }}"
     run: |
       set -eu
-      curl -sSL "${{ inputs.POETRY_URL }}" | python - --version "${{ inputs.POETRY_VERSION }}"
+      curl -Ss --fail --location "${POETRY_URL}" | python - --version "${POETRY_VERSION}"
       echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
   - uses: actions/checkout@v3
@@ -53,29 +56,35 @@ runs:
 
   - name: "Release"
     shell: bash
+    env:
+      CODE_PATHS: "${{ inputs.CODE_PATHS }}"
+      EXPECTED_BRANCH: "${{ inputs.EXPECTED_BRANCH }}"
+      RELEASE_TYPE: "${{ inputs.RELEASE_TYPE }}"
+      GIT_USER_NAME: "${{ inputs.GIT_USER_NAME }}"
+      GIT_USER_EMAIL: "${{ inputs.GIT_USER_EMAIL }}"
     run: |
       set -Eeuo pipefail
       set -x
 
       branch="$(git branch --show-current)"
-      if [ "$branch" != "${{ inputs.EXPECTED_BRANCH }}" ]; then
-          echo "Unexpected branch='${branch}' != '${{ inputs.EXPECTED_BRANCH }}'" >&2
+      if [ "$branch" != "$EXPECTED_BRANCH" ]; then
+          echo "Unexpected branch='${branch}' != '${EXPECTED_BRANCH}'" >&2
           exit 1
       fi
 
       # Makes it possible to avoid version bump on non-code changes:
       LAST_VER="$(poetry version --short)"
-      changes="$(git diff --stat "refs/tags/v${LAST_VER}" -- ${{ inputs.CODE_PATHS }})"
+      changes="$(git diff --stat "refs/tags/v${LAST_VER}" -- $CODE_PATHS)"
       if [ -z "$changes" ]; then
-          echo "No changes since 'v${LAST_VER}' in ${{ inputs.CODE_PATHS }}"
+          echo "No changes since 'v${LAST_VER}' in '${CODE_PATHS}'"
           exit 0
       fi
 
-      poetry version "${{ inputs.RELEASE_TYPE }}"
+      poetry version "$RELEASE_TYPE"
       NEW_VER="$(poetry version --short)"
 
-      git config user.name "${{ inputs.GIT_USER_NAME }}"
-      git config user.email "${{ inputs.GIT_USER_EMAIL }}"
+      git config user.name "$GIT_USER_NAME"
+      git config user.email "$GIT_USER_EMAIL"
 
       git commit -am "Release ${NEW_VER}"
       git tag "v${NEW_VER}"

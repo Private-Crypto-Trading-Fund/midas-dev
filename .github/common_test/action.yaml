@@ -39,19 +39,24 @@ runs:
       python-version: "${{ inputs.PYTHON_VERSION }}"
   - name: "Install Poetry"
     shell: bash
+    env:
+      POETRY_URL: "${{ inputs.POETRY_URL }}"
+      POETRY_VERSION: "${{ inputs.POETRY_VERSION }}"
     run: |
       set -eu
-      curl -sSL "${{ inputs.POETRY_URL }}" | python - --version "${{ inputs.POETRY_VERSION }}"
+      curl -Ss --fail --location "${POETRY_URL}" | python - --version "${POETRY_VERSION}"
       echo "$HOME/.local/bin" >> "$GITHUB_PATH"
   - name: Install dependencies
     shell: bash
+    env:
+      PIP_VERSION_SPEC: "${{ inputs.PIP_VERSION_SPEC }}"
     run: |
       set -eu
       mkdir -p ~/.ssh
       if [ -f ./deploy/id_rsa ]; then cp ./deploy/id_rsa ~/.ssh/id_rsa && chmod 600 ~/.ssh/id_rsa; fi
       if [ -d ./deploy/ssh ]; then cp ./deploy/ssh/* ~/.ssh/ && chmod 600 ~/.ssh/id_*; fi
       poetry install --no-interaction --sync
-      poetry run pip install -U "pip${{ inputs.PIP_VERSION_SPEC }}"
+      poetry run pip install -U "pip${PIP_VERSION_SPEC}"
 
   - name: Run checks
     env:
