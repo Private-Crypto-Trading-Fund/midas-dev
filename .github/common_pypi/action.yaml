@@ -50,6 +50,7 @@ runs:
   - name: "Exit if not on master branch"
     if: |
       inputs.DO_CHECKOUT == 'true'
+      && inputs.EXPECTED_BRANCH != ''
       && github.event.base_ref != format('refs/heads/{0}', inputs.EXPECTED_BRANCH)
     shell: bash
     env:
