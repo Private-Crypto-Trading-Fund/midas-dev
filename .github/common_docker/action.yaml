@@ -56,9 +56,9 @@ runs:
       set -Eeuo pipefail
       set -x
 
-      expected_ref="refs/heads/${EXPECTED_BRANCH}"
+      expected_ref="refs/remotes/origin/${EXPECTED_BRANCH}"
       current_commit="$(git rev-parse HEAD)"
-      branches="$(git branch --contains="$current_commit" --format="%(refname)")"
+      branches="$(git branch --all --contains="$current_commit" --format="%(refname)")"
       if ! printf "%s" "$branches" | grep -q "^${expected_ref}\$"; then
           echo "current_commit='${current_commit}' not in expected_ref='${expected_ref}' (branches=${branches})" >&2
           exit 254
