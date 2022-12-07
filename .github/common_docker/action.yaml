@@ -40,6 +40,9 @@ runs:
   # Side sad boolean input note: https://github.com/actions/runner/issues/1483
   - if: "inputs.DO_CHECKOUT == 'true'"
     uses: actions/checkout@v3
+    with:
+      fetch-depth: 0  # all history, e.g. for the `EXPECTED_BRANCH` check.
+      submodules: recursive
 
   # https://stackoverflow.com/a/59894223
   - name: "Fail if not on expected branch"
