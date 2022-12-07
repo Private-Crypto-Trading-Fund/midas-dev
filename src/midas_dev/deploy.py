@@ -11,7 +11,7 @@ import sys
 import tempfile
 from collections.abc import Generator, Iterable
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar, cast
 
 import toml
 
@@ -68,6 +68,7 @@ Introduction to a new project:
 
 """
 
+TDeployType = Literal["production", "staging"]
 
 HERE = Path(__file__).parent
 CONFIGS_PATH = HERE / "deploy_data"
@@ -242,12 +243,29 @@ class DeployManager:
             or "-p 22022 -l ubuntu"
         )
 
+    def get_current_branch(self) -> str:
+        return self._sh("git branch --show-current")
+
+    def get_deploy_type(self) -> TDeployType | None:
+        deploy_type = self._conf_value("DEPLOY_TYPE")
+        if deploy_type:
+            if deploy_type not in ("production", "staging"):
+                raise ValueError(f"Unexpected DEPLOY_TYPE={deploy_type!r}")
+            return cast(TDeployType, deploy_type)
+
+        branch = self.get_current_branch()
+        branch_to_type: dict[str, TDeployType] = {
+            self._pyproj["tool"]["deploy"].get("production_branch") or "master": "production",
+            self._pyproj["tool"]["deploy"].get("staging_branch") or "staging": "staging",
+        }
+        return branch_to_type.get(branch)
+
     def _log(self, message: str) -> None:
         sys.stderr.write(f"| {message}\n")
 
     def _sh(self, cmd: str, capture: bool = True, check: bool = True, **kwargs: Any) -> str:
         self._log(f"$ {cmd}")
-        res = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE if capture else None, check=check, **kwargs)
+        res = subprocess.run(["bash", "-c", cmd], stdout=subprocess.PIPE if capture else None, check=check, **kwargs)
         return (res.stdout or b"").decode(errors="replace").rstrip("\n")
 
     def _ssh(self, instance: str, cmd: str, capture: bool = True) -> str:
@@ -429,6 +447,10 @@ class DeployManager:
         self._ssh(instance, main_setup_cmd, capture=False)
 
     def _process_instance(self, instance: str, cmd: str | None = None) -> None:
+        if cmd == "echo":
+            sys.stdout.write(f"{instance}\n")
+            return
+
         self._log(f"Setting up {instance=!r}")
         status = self._ssh(instance, self._sh_tpl(_STATUS_CHECK_TPL))
         if status not in ("ok", "none"):
@@ -473,7 +495,22 @@ class DeployManager:
 
     @functools.cached_property
     def _instances(self) -> list[str]:
-        instances = self._conf_value("DEPLOY_TARGET_INSTANCES") or self._pyproj["tool"]["deploy"]["instances"]
+        instances = self._conf_value("DEPLOY_TARGET_INSTANCES")
+
+        deploy_type: TDeployType | None = None
+        if not instances:
+            deploy_type = self.get_deploy_type()
+            if deploy_type == "production":
+                instances = self._pyproj["tool"]["deploy"].get("production_instances")
+            elif deploy_type == "staging":
+                instances = self._pyproj["tool"]["deploy"].get("staging_instances")
+
+        if not instances:
+            instances = self._pyproj["tool"]["deploy"].get("instances")
+
+        if not instances:
+            raise ValueError(f"No instances defined for {deploy_type=!r}")
+
         return instances.split()
 
     def main(self) -> None:
