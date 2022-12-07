@@ -42,21 +42,25 @@ runs:
     uses: actions/checkout@v3
 
   # https://stackoverflow.com/a/59894223
-  - name: "Exit if not on master branch"
-    if: |
-      inputs.DO_CHECKOUT == 'true'
-      && inputs.EXPECTED_BRANCH != ''
-      && github.event.base_ref != format('refs/heads/{0}', inputs.EXPECTED_BRANCH)
+  - name: "Fail if not on expected branch"
+    if: "inputs.DO_CHECKOUT == 'true' && inputs.EXPECTED_BRANCH != ''"
     shell: bash
     env:
       BASE_REF: "${{ github.event.base_ref }}"
       EXPECTED_BRANCH: "${{ inputs.EXPECTED_BRANCH }}"
     run: |
-      # Failing the EXPECTED_BRANCH check.
+      # `EXPECTED_BRANCH` check
       set -Eeuo pipefail
-      echo "github.event.base_ref = '${BASE_REF}' != 'refs/heads/${EXPECTED_BRANCH}'"
-      exit 254
-  - name: "Exit if not on a version tag"
+      set -x
+
+      expected_ref="refs/heads/${EXPECTED_BRANCH}"
+      current_commit="$(git rev-parse HEAD)"
+      branches="$(git branch --contains="$current_commit" --format="%(refname)")"
+      if ! printf "%s" "$branches" | grep -q "^${expected_ref}\$"; then
+          echo "current_commit='${current_commit}' not in expected_ref='${expected_ref}' (branches=${branches})" >&2
+          exit 254
+      fi
+  - name: "Fail if not on a version tag"
     shell: bash
     run: |
       # Version tag check
