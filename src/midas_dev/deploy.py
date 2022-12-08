@@ -9,11 +9,14 @@ import shlex
 import subprocess
 import sys
 import tempfile
-from collections.abc import Generator, Iterable
+from collections.abc import Generator, Iterable, Sequence
 from pathlib import Path
 from typing import Any, Literal, TypeVar, cast
 
 import toml
+import yaml
+
+from midas_dev.utils import deep_merge
 
 HELP = """
 Script for one-run (re)deploying.
@@ -34,6 +37,7 @@ Testing usage: deploy on a specified single host:
 
 Run one of the main or extra steps independently:
 
+    poetry run middeploy - check
     poetry run middeploy - initial_setup
     poetry run middeploy - pull_prod_config
     poetry run middeploy - write_prod_config
@@ -49,7 +53,7 @@ WARNING: the CLI format of this is subject to change.
 
 Introduction to a new project:
 
-  * Configure `pyproject.toml` `[tool.deploy]`:
+  * Configure `./pyproject.toml` `[tool.deploy]`:
     * `instances`: space-separated hostnames to deploy onto.
       See `DEPLOY_TARGET_INSTANCES` override example above.
     * `ssh_options`: Optional extra options for `ssh` (and rsync-over-ssh).
@@ -71,7 +75,9 @@ Introduction to a new project:
 TDeployType = Literal["production", "staging"]
 
 HERE = Path(__file__).parent
-CONFIGS_PATH = HERE / "deploy_data"
+LIB_CONFIGS_PATH = HERE / "deploy_data"
+DOCKER_REGISTRY_REPO = "investmentsteam"
+
 DOCKER_TOKEN_PATH = Path.home() / ".config/midas/docker_token"
 
 
@@ -79,20 +85,31 @@ _COMMON_SHELL_HEAD = r"""
 set -eux
 export LC_ALL=C DEBIAN_FRONTEND=noninteractive DEBIAN_PRIORITY=critical NEEDRESTART_MODE=a
 """
+
+
+def _common_raw_command(cmd: str) -> str:
+    """Wrap a script into common handling that doesn't require templating"""
+    return _COMMON_SHELL_HEAD.strip() + "\n" + cmd.strip()
+
+
 _COMMON_SHELL_TPL_HEAD_BASE = r"""
 export {vervar_spec}
 """
-_COMMON_SHELL_TPL_HEAD = _COMMON_SHELL_HEAD + _COMMON_SHELL_TPL_HEAD_BASE
+_COMMON_SHELL_TPL_HEAD = _common_raw_command(_COMMON_SHELL_TPL_HEAD_BASE)
+
+
+def _common_tpl_command(cmd: str) -> str:
+    """
+    Wrap a script into common handling that **does** require templating
+    (and provides a version env variable).
+    """
+    return _COMMON_SHELL_TPL_HEAD.strip() + "\n" + cmd.strip()
 
 
 _STATUS_CHECK_TPL_BASE = r"""
-if [ -d {prjname_sq} ]; then
-    echo ok
-else
-    echo none
-fi
+if [ -d {prjname_sq} ]; then echo "ok"; else echo "none"; fi
 """
-_STATUS_CHECK_TPL = _COMMON_SHELL_TPL_HEAD + _STATUS_CHECK_TPL_BASE
+_STATUS_CHECK_TPL = _common_tpl_command(_STATUS_CHECK_TPL_BASE)
 
 
 _INSTANCE_NAME_SH_BASE = r"""
@@ -105,13 +122,13 @@ curl -Ss --fail-with-body \
     -H "X-aws-ec2-metadata-token: $TOKEN" \
     "http://169.254.169.254/latest/meta-data/tags/instance/Name"
 """
-_INSTANCE_NAME_SH = _COMMON_SHELL_HEAD + _INSTANCE_NAME_SH_BASE
+_INSTANCE_NAME_SH = _common_raw_command(_INSTANCE_NAME_SH_BASE)
 
 
 _SET_HOSTNAME_TPL_BASE = r"""
 sudo hostnamectl set-hostname {target_hostname_sq}
 """
-_SET_HOSTNAME_TPL = _COMMON_SHELL_HEAD + _SET_HOSTNAME_TPL_BASE
+_SET_HOSTNAME_TPL = _common_raw_command(_SET_HOSTNAME_TPL_BASE)
 
 
 _SET_UP_DOCKER_TPL_BASE = r"""
@@ -128,11 +145,11 @@ sudo systemctl daemon-reload
 sudo systemctl restart docker
 
 """
-_SET_UP_DOCKER_TPL = _COMMON_SHELL_TPL_HEAD + _SET_UP_DOCKER_TPL_BASE
+_SET_UP_DOCKER_TPL = _common_tpl_command(_SET_UP_DOCKER_TPL_BASE)
 _DOCKER_AUTH_TPL_BASE = r"""
 echo {docker_token_sq} | docker login --username {docker_username_sq} --password-stdin
 """
-_DOCKER_AUTH_TPL = _COMMON_SHELL_TPL_HEAD + _DOCKER_AUTH_TPL_BASE
+_DOCKER_AUTH_TPL = _common_tpl_command(_DOCKER_AUTH_TPL_BASE)
 
 _SET_UP_NETDATA_TPL_BASE = r"""
 curl -Ss --fail-with-body \
@@ -147,32 +164,39 @@ sh -x /tmp/netdata-kickstart.sh \
 sudo cp /tmp/_netdata_config/* /etc/netdata/
 sudo systemctl restart netdata.service
 """
-_SET_UP_NETDATA_TPL = _COMMON_SHELL_TPL_HEAD + _SET_UP_NETDATA_TPL_BASE
+_SET_UP_NETDATA_TPL = _common_tpl_command(_SET_UP_NETDATA_TPL_BASE)
 
 
 _SET_UP_STUFF_TPL_BASE = r"""
 sudo snap remove amazon-ssm-agent --purge  # does not error-exit if it is not installed
 """
-_SET_UP_STUFF_TPL = _COMMON_SHELL_TPL_HEAD + _SET_UP_STUFF_TPL_BASE
+_SET_UP_STUFF_TPL = _common_tpl_command(_SET_UP_STUFF_TPL_BASE)
 
 
 _INITIAL_SETUP_FINALIZE_TPL_BASE = r"""
-mkdir -p {prjname_sq}
+mkdir -p ./{prjname_sq}
 """
-_INITIAL_SETUP_FINALIZE_TPL = _COMMON_SHELL_TPL_HEAD + _INITIAL_SETUP_FINALIZE_TPL_BASE
+_INITIAL_SETUP_FINALIZE_TPL = _common_tpl_command(_INITIAL_SETUP_FINALIZE_TPL_BASE)
 
 
-_MAIN_SETUP_TPL_BASE = r"""
-cd {prjname_sq}
-docker pull {main_image_sq}
-docker-compose -f docker-compose.yaml -f deploy/docker-compose.prod.yaml pull --include-deps
-docker-compose -f docker-compose.yaml -f deploy/docker-compose.prod.yaml down
-docker-compose -f docker-compose.yaml -f deploy/docker-compose.prod.yaml up --no-build --detach
+_MAIN_SETUP_TPL_BASE_TPL = r"""
+cd ./{{prjname_sq}}
+docker pull {{main_image_sq}}
 
-sleep 10
+docker-compose {dc_files} pull --include-deps
+docker ps
+docker-compose {dc_files} down
+docker-compose {dc_files} up --no-build --detach
+
+sleep 7
 docker ps
 """
-_MAIN_SETUP_TPL = _COMMON_SHELL_TPL_HEAD + _MAIN_SETUP_TPL_BASE
+_PROD_CONFIGS_CMD = "-f ./docker-compose.yaml -f ./deploy/docker-compose.prod.yaml"
+_STAGING_CONFIGS_CMD = (
+    "-f ./docker-compose.yaml -f ./deploy/docker-compose.prod.yaml -f ./deploy/docker-compose.staging.yaml"
+)
+_MAIN_SETUP_PROD_TPL = _common_tpl_command(_MAIN_SETUP_TPL_BASE_TPL.format(dc_files=_PROD_CONFIGS_CMD))
+_MAIN_SETUP_STAGING_TPL = _common_tpl_command(_MAIN_SETUP_TPL_BASE_TPL.format(dc_files=_STAGING_CONFIGS_CMD))
 
 
 TType = TypeVar("TType")
@@ -228,6 +252,14 @@ class DeployManager:
         return ensure_type(self._pyproj["tool"]["poetry"]["name"], str)
 
     @functools.cached_property
+    def _app_version_var_name(self) -> str:
+        return f"{self._prjname.upper()}_IMAGE_VERSION"  # e.g. SOMEPROJ_IMAGE_VERSION
+
+    @functools.cached_property
+    def _app_docker_image(self) -> str:
+        return f"{DOCKER_REGISTRY_REPO}/{self._prjname}"
+
+    @functools.cached_property
     def _conf_relpath(self) -> str:
         return f".config/midas/{self._prjname}/.env"
 
@@ -246,6 +278,7 @@ class DeployManager:
     def get_current_branch(self) -> str:
         return self._sh("git branch --show-current")
 
+    # TODO: caching (but also async).
     def get_deploy_type(self) -> TDeployType | None:
         deploy_type = self._conf_value("DEPLOY_TYPE")
         if deploy_type:
@@ -310,7 +343,7 @@ class DeployManager:
             "___ENDPOINT___": self._pyproj["tool"]["deploy"]["netdata_sender_endpoint"],
         }
         for filename in filenames:
-            src = CONFIGS_PATH / filename
+            src = LIB_CONFIGS_PATH / filename
             content = src.read_text()
             for tpl_text, res_text in tpl_replacements.items():
                 content = content.replace(tpl_text, res_text)
@@ -323,6 +356,63 @@ class DeployManager:
             path = Path(tempdir)
             self._render_configs(path)
             yield Path(path)
+
+    def _check_compose_configs(self, paths: Sequence[Path]) -> None:
+        partial_configs = [yaml.safe_load(path.read_text()) for path in paths]
+
+        # Note that this doesn't match `docker-compose`'s config merging in general,
+        # but should be close enough except for lists.
+        config: dict[str, Any] = {}  # `reduce(deep_merge, configs, {})`
+        for partial_config in partial_configs:
+            config = deep_merge(config, partial_config)
+
+        errors: list[str] = []
+
+        app_image = self._app_docker_image
+        app_image_full = f"{app_image}:${{{self._app_version_var_name}}}"
+        app_services = {
+            name: cfg
+            for name, cfg in config["services"].items()
+            if cfg.get("image") and cfg["image"].startswith(app_image)
+        }
+        if not app_services:
+            errors.append(f'Did not find any `image: "{app_image}:…"` services')
+
+        mistagged_services = {
+            name: cfg["image"] for name, cfg in app_services.items() if cfg["image"] != app_image_full
+        }
+        if mistagged_services:
+            errors.append(f"Found project services with `image` != {app_image_full!r}: {mistagged_services!r}")
+
+        env_file = f"$HOME/{self._conf_relpath}"
+        misenved_services = {
+            name: cfg["env_file"] for name, cfg in app_services.items() if cfg.get("env_file") != env_file
+        }
+        if misenved_services:
+            errors.append(f"Found project services with `env_file` != {env_file!r}: {misenved_services!r}")
+
+        if errors:
+            configs_str = " ".join(f"-f {path}" for path in paths)
+            errors_str = "\n".join(f"    {error}" for error in errors)
+            raise ValueError(f"Error checking config for `docker-compose {configs_str}`:\n{errors_str}")
+
+    def _check_project(self) -> None:
+        """Ensure there are no obvious mistakes in the current project"""
+        compose_main = Path("./docker-compose.yaml")
+        compose_prod = Path("./deploy/docker-compose.prod.yaml")
+        compose_staging = Path("./deploy/docker-compose.prod.yaml")
+        caddy_config = Path("./deploy/Caddyfile")
+
+        required_files = [compose_main, compose_prod, caddy_config]
+        # TODO: if `staging` is mentioned, also require the `compose_staging`
+
+        missing_files = [str(path) for path in required_files if not path.is_file()]
+        if missing_files:
+            raise ValueError(f"Missing required files: {missing_files!r}")
+
+        self._check_compose_configs([compose_main, compose_prod])
+        if compose_staging.is_file():
+            self._check_compose_configs([compose_main, compose_prod, compose_staging])
 
     def _hostname_from_name_tag(self, instance: str) -> str:
         try:
@@ -429,7 +519,12 @@ class DeployManager:
         self._initial_setup_finalize(instance)
 
     def _main_setup(self, instance: str) -> None:
-        main_setup_cmd = self._sh_tpl(_MAIN_SETUP_TPL)
+        deploy_type = self.get_deploy_type()
+        if deploy_type is None or deploy_type == "production":
+            main_setup_cmd = self._sh_tpl(_MAIN_SETUP_PROD_TPL)
+        else:
+            assert deploy_type == "staging"
+            main_setup_cmd = self._sh_tpl(_MAIN_SETUP_STAGING_TPL)
 
         # Files that are used directly and not through the docker images.
         # TODO: `--delete-excluded`.
@@ -488,18 +583,16 @@ class DeployManager:
 
     def _main_prepare(self, image_tag: str = "latest") -> None:
         self._sh_tpl_vars["prjname_sq"] = self._sq(self._prjname)
+        self._sh_tpl_vars["vervar_spec"] = f"{self._app_version_var_name}={self._sq(image_tag)}"
+        self._sh_tpl_vars["main_image_sq"] = self._sq(f"{self._app_docker_image}:{image_tag}")
 
-        vervar = f"{self._prjname.upper()}_IMAGE_VERSION"  # e.g. SOMEPROJ_IMAGE_VERSION
-        self._sh_tpl_vars["vervar_spec"] = f"{vervar}={self._sq(image_tag)}"
-        self._sh_tpl_vars["main_image_sq"] = self._sq(f"investmentsteam/{self._prjname}:{image_tag}")
-
-    @functools.cached_property
-    def _instances(self) -> list[str]:
+    def get_instances(self, deploy_type: TDeployType | None = None) -> list[str]:
+        instances: str | list[str] | None
         instances = self._conf_value("DEPLOY_TARGET_INSTANCES")
 
-        deploy_type: TDeployType | None = None
         if not instances:
-            deploy_type = self.get_deploy_type()
+            if deploy_type is None:
+                deploy_type = self.get_deploy_type()
             if deploy_type == "production":
                 instances = self._pyproj["tool"]["deploy"].get("production_instances")
             elif deploy_type == "staging":
@@ -511,7 +604,7 @@ class DeployManager:
         if not instances:
             raise ValueError(f"No instances defined for {deploy_type=!r}")
 
-        return instances.split()
+        return instances if isinstance(instances, list) else instances.split()
 
     def main(self) -> None:
         # TODO: some `click` cmd or something.
@@ -524,9 +617,15 @@ class DeployManager:
         if len(sys.argv) > 2:
             cmd = sys.argv[2]
 
-        self._main_prepare(image_tag=image_tag)
+        self._check_project()
+        if cmd == "check":
+            # TODO: more extensive checks
+            return
 
-        for instance in self._instances:
+        self._main_prepare(image_tag=image_tag)
+        instances = self.get_instances()
+
+        for instance in instances:
             self._process_instance(instance, cmd=cmd)
 
     @classmethod

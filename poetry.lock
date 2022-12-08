@@ -1394,7 +1394,7 @@ name = "types-pyyaml"
 version = "6.0.12.2"
 description = "Typing stubs for PyYAML"
 category = "main"
-optional = true
+optional = false
 python-versions = "*"
 
 [[package]]
@@ -1515,7 +1515,7 @@ django = ["django-coverage-plugin", "django-debug-toolbar", "django-extra-checks
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "d265a6383828eaa6b727cd0de8f31275834df005661fdffd9866eca3e142b681"
+content-hash = "4794292c7f1d564cebf31e11c7d6bdd6cc2f5ff7bc73bc373b706015e3866b44"
 
 [metadata.files]
 appdirs = [
