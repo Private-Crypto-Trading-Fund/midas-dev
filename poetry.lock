@@ -1515,7 +1515,7 @@ django = ["django-coverage-plugin", "django-debug-toolbar", "django-extra-checks
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.10"
-content-hash = "d265a6383828eaa6b727cd0de8f31275834df005661fdffd9866eca3e142b681"
+content-hash = "93db2faa11e13996ce474a5666e7daea6dfcfe14081c5ef62099f8a647d4e6d2"
 
 [metadata.files]
 appdirs = [
